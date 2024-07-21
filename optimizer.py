@@ -31,7 +31,8 @@ def get_star_photometry(star_id: str) -> list[pd.DataFrame]:
 
 def get_periods_by_observation_number(data: pd.DataFrame) -> pd.DataFrame:
     """
-    Get the periods by observation number for a given star.
+    Calculate the periods by number of observations for a given star, 
+    using a sample of the data with increasing size on each step.
     :param data: pd.DataFrame containing the data for the given star.
     :return: Dict containing the periods by observation number.
     """
@@ -39,29 +40,30 @@ def get_periods_by_observation_number(data: pd.DataFrame) -> pd.DataFrame:
     observations = 5
     while observations < len(data):
         periods_by_observation_number[observations], _ = compute_period(
-            data[:observations], 'DATE-OBS', 'MAG_AUTO_NORM', 'MAGERR_AUTO')
+            data.sample(observations), 'DATE-OBS', 'MAG_AUTO_NORM', 'MAGERR_AUTO')
         observations += 5
     return periods_by_observation_number
 
 
-def plot_periods_by_observation_number(periods_by_observation_number: pd.DataFrame):
+def plot_periods_by_observation_number(periods_by_observation_number: pd.DataFrame, title: str | None = None):
     """
     Plot the periods by observation number for a given star.
     :param periods_by_observation_number: Dict containing the periods by observation number.
     """
-    periods = [period for period in periods_by_observation_number.values()]
-    observation_numbers = [
-        observation_number for observation_number in periods_by_observation_number.keys()]
-    plt.plot(observation_numbers, periods)
+    plt.plot(periods_by_observation_number.keys(),
+             periods_by_observation_number.values())
     plt.xlabel('Number of Observations')
     plt.ylabel('Period')
+    if title is not None:
+        plt.title(title)
     plt.show()
 
 
 if __name__ == '__main__':
-    star_id = 'GAIA01_1321141977590168448'
+    star_id = 'GAIA02_1204518424202454272'
     photometry_data = get_star_photometry(star_id)
     for key in photometry_data:
         periods_by_observation_number = get_periods_by_observation_number(
             photometry_data[key])
-        plot_periods_by_observation_number(periods_by_observation_number)
+        plot_periods_by_observation_number(
+            periods_by_observation_number, star_id + ' Periods by Observation Number for filter ' + key)

@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from astropy.table import Table
 
+from utils.data_utils import get_star_lookup_data
 from utils.period_utils import compute_period, prepareTable
 
 
@@ -45,6 +46,17 @@ def get_periods_by_observation_number(data: pd.DataFrame) -> pd.DataFrame:
     return periods_by_observation_number
 
 
+def get_gaia_period(star_id: str) -> float:
+    """
+    Get the period of a star using Gaia data.
+    :param star_id: The ID of the star to get the period for.
+    :return: The period of the star.
+    """
+    gaia_id = star_id.split('_')[-1]
+    gaia_data = get_star_lookup_data(gaia_id)
+    return gaia_data['rrl.pf'].values[0]
+
+
 def plot_periods_by_observation_number(periods_by_observation_number: pd.DataFrame, title: str | None = None):
     """
     Plot the periods by observation number for a given star.
@@ -52,8 +64,11 @@ def plot_periods_by_observation_number(periods_by_observation_number: pd.DataFra
     """
     plt.plot(periods_by_observation_number.keys(),
              periods_by_observation_number.values())
+    plt.plot([0, max(periods_by_observation_number.keys())], [
+             get_gaia_period(star_id), get_gaia_period(star_id)], label='Gaia Period')
     plt.xlabel('Number of Observations')
     plt.ylabel('Period')
+    plt.legend(['Estimated Period', 'Gaia Period'])
     if title is not None:
         plt.title(title)
     plt.show()

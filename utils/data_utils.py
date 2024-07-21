@@ -9,7 +9,7 @@ def get_star_lookup_data(gaia_id: str) -> pd.DataFrame:
     :return: The star lookup data for the given Gaia ID.
     """
     star_lookup = pd.read_csv('data/star_lookup.csv')
-    return star_lookup[star_lookup['source_id'] == gaia_id]
+    return star_lookup[star_lookup['source_id'] == int(gaia_id)]
 
 
 def flux_to_magnitude_error(flux: float, flux_error: float) -> float:

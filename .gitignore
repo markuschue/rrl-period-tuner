@@ -1,3 +1,5 @@
 benchmark/
 .env/
 .vscode/
+data/
+__pycache__/

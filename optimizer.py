@@ -39,7 +39,9 @@ def get_periods_by_observation_number(data: pd.DataFrame) -> pd.DataFrame:
     """
     periods_by_observation_number = {}
     observations = 5
-    while observations < len(data):
+    while observations < len(data) + 5:
+        if observations > len(data):
+            observations = len(data)
         periods_by_observation_number[observations], _ = compute_period(
             data.sample(observations), 'DATE-OBS', 'MAG_AUTO_NORM', 'MAGERR_AUTO')
         observations += 5
@@ -62,6 +64,7 @@ def plot_periods_by_observation_number(periods_by_observation_number: pd.DataFra
     Plot the periods by observation number for a given star.
     :param periods_by_observation_number: Dict containing the periods by observation number.
     """
+    plt.figure().set_figwidth(10)
     plt.plot(periods_by_observation_number.keys(),
              periods_by_observation_number.values())
     plt.plot([0, max(periods_by_observation_number.keys())], [
@@ -75,7 +78,7 @@ def plot_periods_by_observation_number(periods_by_observation_number: pd.DataFra
 
 
 if __name__ == '__main__':
-    star_id = 'GAIA02_1204518424202454272'
+    star_id = 'GAIA04_2051756764073824512'
     photometry_data = get_star_photometry(star_id)
     for key in photometry_data:
         periods_by_observation_number = get_periods_by_observation_number(

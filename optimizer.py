@@ -32,7 +32,7 @@ def get_star_photometry(star_id: str) -> list[pd.DataFrame]:
 
 def get_periods_by_observation_number(data: pd.DataFrame) -> pd.DataFrame:
     """
-    Calculate the periods by number of observations for a given star,
+    Calculate the periods by number of observations for a given star, 
     using a sample of the data with increasing size on each step.
     :param data: pd.DataFrame containing the data for the given star.
     :return: Dict containing the periods by observation number.
@@ -59,32 +59,29 @@ def get_gaia_period(star_id: str) -> float:
     return gaia_data['rrl.pf'].values[0]
 
 
-def plot_periods_by_observation_number(periods_by_observation_number: dict, gaia_period: float, title: str = None):
+def plot_periods_by_observation_number(periods_by_observation_number: pd.DataFrame, title: str | None = None):
     """
     Plot the periods by observation number for a given star.
-    :param periods_by_observation_number: Dict containing the periods by observation number where each key is a filter, and its value a pd.DataFrame.
-    :param title: The title of the plot.
+    :param periods_by_observation_number: Dict containing the periods by observation number.
     """
     plt.figure().set_figwidth(10)
+    plt.plot(periods_by_observation_number.keys(),
+             periods_by_observation_number.values())
+    plt.plot([0, max(periods_by_observation_number.keys())], [
+             get_gaia_period(star_id), get_gaia_period(star_id)], label='Gaia Period')
     plt.xlabel('Number of Observations')
     plt.ylabel('Period')
+    plt.legend(['Estimated Period', 'Gaia Period'])
     if title is not None:
         plt.title(title)
-    for key in periods_by_observation_number:
-        plt.plot(periods_by_observation_number[key].keys(),
-                 periods_by_observation_number[key].values(), label=key)
-    plt.plot([0, max(periods_by_observation_number[key].keys())], [gaia_period, gaia_period],
-             label='Gaia Period', linestyle='--')
-    plt.legend()
     plt.show()
 
 
 if __name__ == '__main__':
-    star_id = 'GAIA03_1360607637502749440'
+    star_id = 'GAIA04_2051756764073824512'
     photometry_data = get_star_photometry(star_id)
-    periods_by_observation_number = {}
     for key in photometry_data:
-        periods_by_observation_number[key] = get_periods_by_observation_number(
+        periods_by_observation_number = get_periods_by_observation_number(
             photometry_data[key])
-    plot_periods_by_observation_number(
-        periods_by_observation_number, get_gaia_period(star_id), star_id + ' Periods by Observation Number')
+        plot_periods_by_observation_number(
+            periods_by_observation_number, star_id + ' Periods by Observation Number for filter ' + key)

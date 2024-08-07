@@ -69,5 +69,6 @@ if __name__ == '__main__':
         for key in photometry_data:
             periods_by_observation_number[key] = get_periods_by_observation_number(
                 photometry_data[key])
+
     plot_periods_by_observation_number(
         periods_by_observation_number, get_gaia_period(STAR_ID), STAR_ID + ' Periods by Observation Number')

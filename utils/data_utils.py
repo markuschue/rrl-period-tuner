@@ -28,6 +28,19 @@ def flux_to_magnitude_error(flux: float, flux_error: float) -> float:
     return abs(-2.5 / flux / log(10)) * flux_error
 
 
+def bjd_tcb_to_mjd(bjd_tcb_date: float) -> float:
+    # Reference JD corresponding to T0 (2010-01-01T00:00:00)
+    ref_jd = 2455197.5
+
+    # Calculate the full BJD(TCB)
+    bjd_tcb = bjd_tcb_date + ref_jd
+
+    # Convert BJD(TCB) to MJD
+    mjd = bjd_tcb - 2400000.5
+
+    return mjd
+
+
 def parse_gaia_photometry(gaia_photometry: pd.DataFrame) -> pd.DataFrame:
     """
     Parse the Gaia Epoch photometry data to a format that can be used by the optimizer.
@@ -39,7 +52,7 @@ def parse_gaia_photometry(gaia_photometry: pd.DataFrame) -> pd.DataFrame:
     gaia_photometry['MAG_AUTO_NORM'] = gaia_photometry['mag']
     gaia_photometry['MAGERR_AUTO'] = flux_to_magnitude_error(
         gaia_photometry['flux'], gaia_photometry['flux_error'])
-    gaia_photometry['DATE-OBS'] = gaia_photometry['time']
+    gaia_photometry['DATE-OBS'] = bjd_tcb_to_mjd(gaia_photometry['time'])
     gaia_photometry['ID'] = gaia_photometry['source_id']
     return gaia_photometry[['ID', 'DATE-OBS', 'MAG_AUTO_NORM', 'MAGERR_AUTO']].copy()
 

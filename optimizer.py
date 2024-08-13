@@ -2,6 +2,7 @@
 import concurrent.futures
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 from utils.data_utils import get_star_lookup_data, get_star_photometry
@@ -56,6 +57,36 @@ def get_gaia_period(star_id: str) -> float:
     return gaia_data['rrl.pf'].values[0]
 
 
+def find_min_observations(data: dict, std_threshold=0.005, window=5):
+    """
+    Find the minimum number of observations required to stabilize the period using rolling standard deviation.
+
+    Parameters:
+        data (dict): A dictionary where keys are the number of observations, and values are the periods.
+        std_threshold (float): The maximum allowed rolling standard deviation for stabilization.
+        window (int): The number of consecutive observations used in the rolling window.
+
+    Returns:
+        int: The minimum number of observations required to stabilize the period.
+    """
+    observations = sorted(data.keys())
+    periods = [data[o] for o in observations]
+
+    # Convert periods to a Pandas Series for rolling operations
+    period_series = pd.Series(periods)
+
+    # Calculate the rolling standard deviation
+    rolling_std = period_series.rolling(window=window).std()
+
+    # Find the first point where the rolling standard deviation is below the threshold
+    stable_idx = np.nonzero(rolling_std <= std_threshold)[0]
+
+    if len(stable_idx) > 0:
+        return observations[stable_idx[0]]
+    else:
+        return None  # Return None if no stabilization is found
+
+
 def plot_periods_by_observation_number(periods_by_observation_number: dict, gaia_period: float, title: str = None):
     """
     Plot the periods by observation number for a given star.
@@ -68,8 +99,17 @@ def plot_periods_by_observation_number(periods_by_observation_number: dict, gaia
     if title is not None:
         plt.title(title)
     for key in periods_by_observation_number:
+        print(f'Last period found for {key}: {periods_by_observation_number[key][max(
+            periods_by_observation_number[key].keys())]}')
+        min_observations = find_min_observations(
+            periods_by_observation_number[key])
         plt.plot(periods_by_observation_number[key].keys(),
                  periods_by_observation_number[key].values(), label=key)
+        if min_observations is not None:
+            print(f'Stabilization Point for {key}: {min_observations} with period {
+                  periods_by_observation_number[key][min_observations]}')
+            plt.plot([min_observations, min_observations], [0, 1],
+                     label='Stabilization Point for ' + key, linestyle='--')
     plt.plot([0, max(periods_by_observation_number[key].keys())], [gaia_period, gaia_period],
              label='Gaia Period', linestyle='--')
     plt.legend()
@@ -79,17 +119,26 @@ def plot_periods_by_observation_number(periods_by_observation_number: dict, gaia
 if __name__ == '__main__':
     STAR_ID = 'GAIA03_1360607637502749440'
     PHOTOMETRY_PATH = 'data/photometry/' + STAR_ID
+    PERIODS_PATH = 'data/periods/' + STAR_ID
     ONLY_COMBINED = False
+    LOAD_FROM_FILE = True
 
-    photometry_data = get_star_photometry(PHOTOMETRY_PATH)
-    combined_photometry = pd.concat(photometry_data.values())
-    periods_by_observation_number = {
-        "Combined": get_periods_by_observation_number(combined_photometry)
-    }
-    if not ONLY_COMBINED:
-        for key in photometry_data:
-            periods_by_observation_number[key] = get_periods_by_observation_number(
-                photometry_data[key])
+    periods_by_observation_number = {}
+
+    if not LOAD_FROM_FILE:
+        photometry_data = get_star_photometry(PHOTOMETRY_PATH)
+        # combined_photometry = pd.concat(photometry_data.values())
+        # periods_by_observation_number = {
+        #     "Combined": get_periods_by_observation_number(combined_photometry)
+        # }
+        if not ONLY_COMBINED:
+            for key in photometry_data:
+                periods_by_observation_number[key] = get_periods_by_observation_number(
+                    photometry_data[key])
+        np.save(PERIODS_PATH, periods_by_observation_number)
+    else:
+        periods_by_observation_number = np.load(
+            PERIODS_PATH + '.npy', allow_pickle=True).item()
 
     plot_periods_by_observation_number(
         periods_by_observation_number, get_gaia_period(STAR_ID), STAR_ID + ' Periods by Observation Number')

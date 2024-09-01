@@ -41,11 +41,11 @@ def bjd_tcb_to_mjd(bjd_tcb_date: float) -> float:
     return mjd
 
 
-def parse_gaia_photometry(gaia_photometry: pd.DataFrame) -> pd.DataFrame:
+def parse_gaia_photometry(gaia_photometry: pd.DataFrame) -> dict[str, pd.DataFrame]:
     """
     Parse the Gaia Epoch photometry data to a format that can be used by the optimizer.
     :param gaia_photometry: The Gaia Epoch photometry data.
-    :return: The parsed Gaia photometry data.
+    :return: The parsed Gaia photometry data in a dictionary with the filter as the key.
     """
     gaia_photometry = gaia_photometry[~gaia_photometry['rejected_by_photometry']
                                       & ~gaia_photometry['rejected_by_variability']]
@@ -54,7 +54,13 @@ def parse_gaia_photometry(gaia_photometry: pd.DataFrame) -> pd.DataFrame:
         gaia_photometry['flux'], gaia_photometry['flux_error'])
     gaia_photometry['DATE-OBS'] = bjd_tcb_to_mjd(gaia_photometry['time'])
     gaia_photometry['ID'] = gaia_photometry['source_id']
-    return gaia_photometry[['ID', 'DATE-OBS', 'MAG_AUTO_NORM', 'MAGERR_AUTO']].copy()
+    gaia_photometry_data = {}
+    for filter_key in gaia_photometry['band'].unique():
+        parsed_filter_key = str(filter_key)
+        gaia_photometry_data[parsed_filter_key] = gaia_photometry[gaia_photometry['band'] == filter_key]
+        gaia_photometry_data[parsed_filter_key] = gaia_photometry_data[parsed_filter_key][[
+            'ID', 'DATE-OBS', 'MAG_AUTO_NORM', 'MAGERR_AUTO']].copy()
+    return gaia_photometry_data
 
 
 def get_star_photometry(photometry_path: str) -> dict:
@@ -70,14 +76,17 @@ def get_star_photometry(photometry_path: str) -> dict:
             photometry_data[photometry_file.split('.')[0].split(
                 '_')[-1]] = prepareTable(photometry_path+'/'+photometry_file, 1)
         elif photometry_file.startswith('EPOCH_PHOTOMETRY-Gaia DR3'):
-            photometry_data['gaia'] = parse_gaia_photometry(Table.read(
+            gaia_photometry = parse_gaia_photometry(Table.read(
                 photometry_path+'/'+photometry_file, hdu=1).to_pandas())
+            for filter_key in gaia_photometry:
+                photometry_data['Gaia-' +
+                                filter_key] = gaia_photometry[filter_key]
     varid = Table.read(photometry_path+"/finalIDs_" +
                        START_ID+".fits", hdu=1)[0][0]
     pd.options.mode.chained_assignment = None
     filtered_data = {}
     for key in photometry_data:
-        if key != 'gaia':
+        if 'Gaia' not in key:
             filtered_data[key] = photometry_data[key].loc[photometry_data[key].ID == varid, :]
         else:
             filtered_data[key] = photometry_data[key]

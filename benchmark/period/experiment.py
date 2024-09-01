@@ -53,7 +53,7 @@ def confirm(event):
     rr.loc[rr["star"].str.contains(
         obj.split("_")[0]), "period"] = freq_slider.val
     Table.from_pandas(rr).write(
-        '.\\benchmark\\period\\photometry\\periods.txt', format='ascii', overwrite=True)
+        '.\\data\\photometry\\periods.txt', format='ascii', overwrite=True)
 
     return None
 
@@ -199,7 +199,7 @@ best_period, possible_periods = compute_period(
     rrl[zerokey], datestr, magstr, magerrstr)
 print(str(datetime.now() - start)+" s elapsed while computing period")
 
-rr = Table.read('.\\benchmark\\period\\photometry\\periods.txt',
+rr = Table.read('.\\data\\photometry\\periods.txt',
                 format='ascii', names=["star", "period"]).to_pandas()
 period_tabulated = rr.loc[rr["star"].str.contains(
     obj.split("_")[0]), "period"].iloc[0]

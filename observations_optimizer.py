@@ -123,7 +123,7 @@ class ObservationsOptimizer:
 
 
 if __name__ == '__main__':
-    STAR_ID = 'GAIA04_2051756764073824512'
+    STAR_ID = 'GAIA03_1360607637502749440'
     PHOTOMETRY_PATH = 'data/photometry/' + STAR_ID
     PERIODS_PATH = 'data/periods/' + STAR_ID
     ONLY_COMBINED = False

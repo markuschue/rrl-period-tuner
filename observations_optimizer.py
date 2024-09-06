@@ -73,7 +73,7 @@ class ObservationsOptimizer:
         else:
             return None
 
-    def plot_periods_by_observation_number(self, gaia_period: float, title: str = None):
+    def plot_periods_by_observation_number(self, title: str = None):
         """
         Plot the periods by observation number for a given star.
         """
@@ -94,6 +94,7 @@ class ObservationsOptimizer:
                       self.periods_by_observation_number[key][min_observations]}')
                 plt.plot([min_observations, min_observations], [0, 1],
                          label='Stabilization Point for ' + key, linestyle='--')
+        gaia_period = self.get_gaia_period()
         plt.plot([0, max(self.periods_by_observation_number[key].keys())], [gaia_period, gaia_period],
                  label='Gaia Period', linestyle='--')
         plt.legend()
@@ -105,10 +106,10 @@ class ObservationsOptimizer:
         """
         if not self.load_from_file:
             self.photometry_data = get_star_photometry(self.photometry_path)
-            # combined_photometry = pd.concat(photometry_data.values())
-            # periods_by_observation_number = {
-            #     "Combined": get_periods_by_observation_number(combined_photometry)
-            # }
+            combined_photometry = pd.concat(self.photometry_data.values())
+            self.periods_by_observation_number = {
+                "Combined": self.get_periods_by_observation_number(combined_photometry)
+            }
             if not self.only_combined:
                 for key in self.photometry_data:
                     self.periods_by_observation_number[key] = self.get_periods_by_observation_number(
@@ -119,7 +120,44 @@ class ObservationsOptimizer:
                 self.periods_path + '.npy', allow_pickle=True).item()
 
         self.plot_periods_by_observation_number(
-            self.get_gaia_period(), self.star_id + ' Periods by Observation Number')
+            self.star_id + ' Periods by Observation Number')
+
+    def sequentially_add_observations_to_gaia(self):
+        """
+        Sequentially add our observations one by one to the Gaia data (combined)
+        and plot it to see if the period stabilizes or takes erratic values at some point.
+        """
+        if not self.load_from_file:
+            self.photometry_data = get_star_photometry(self.photometry_path)
+            combined_gaia_photometry = pd.concat(
+                [self.photometry_data[key] for key in self.photometry_data if key.startswith('Gaia-')])
+            combined_own_photometry = pd.concat(
+                [self.photometry_data[key] for key in self.photometry_data if not key.startswith('Gaia-')])
+
+            self.periods_by_observation_number = {
+                "Combined": {
+                    len(combined_gaia_photometry): compute_period(combined_gaia_photometry, 'DATE-OBS', 'MAG_AUTO_NORM', 'MAGERR_AUTO')[0]
+                }
+            }
+
+            for n in range(10, len(combined_own_photometry) + 10, 10):
+                if n > len(combined_own_photometry):
+                    n = len(combined_own_photometry)
+                print(f'Iteration {n} of {len(combined_own_photometry)}')
+                combined_photometry = pd.concat(
+                    [combined_gaia_photometry, combined_own_photometry.sample(n)])
+                self.periods_by_observation_number["Combined"][len(combined_gaia_photometry) + n] = compute_period(
+                    combined_photometry, 'DATE-OBS', 'MAG_AUTO_NORM', 'MAGERR_AUTO')[0]
+
+            self.plot_periods_by_observation_number(
+                'Sequentially adding our observations to Gaia\'s for ' + self.star_id)
+            np.save(self.periods_path + '_seq.npy',
+                    self.periods_by_observation_number)
+        else:
+            self.periods_by_observation_number = np.load(
+                self.periods_path + '_seq.npy', allow_pickle=True).item()
+            self.plot_periods_by_observation_number(
+                'Sequentially adding our observations to Gaia\'s for ' + self.star_id)
 
 
 if __name__ == '__main__':
@@ -131,4 +169,5 @@ if __name__ == '__main__':
 
     optimizer = ObservationsOptimizer(
         STAR_ID, PHOTOMETRY_PATH, PERIODS_PATH, ONLY_COMBINED, LOAD_FROM_FILE)
-    optimizer.optimize_observations()
+    # optimizer.optimize_observations()
+    optimizer.sequentially_add_observations_to_gaia()

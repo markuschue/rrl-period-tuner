@@ -63,7 +63,7 @@ def parse_gaia_photometry(gaia_photometry: pd.DataFrame) -> dict[str, pd.DataFra
     return gaia_photometry_data
 
 
-def get_star_photometry(photometry_path: str) -> dict:
+def get_star_photometry(photometry_path: str) -> dict[str, pd.DataFrame]:
     """
     Get the prepared photometry data for a given star as a dict of dataframes for each filter.
     :param photometry_path: The path to the photometry data for the given star. 

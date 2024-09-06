@@ -24,8 +24,8 @@ class PeriodPlotter:
         self.obj = self._get_object_name()
         self.varid = self._load_varid()
         self.data = get_star_photometry(self.bdir)
-        self.data = {key: self.data[key]
-                     for key in self.data if not key.startswith('Gaia')}
+        # self.data = {key: self.data[key]
+        #              for key in self.data if key.startswith('Gaia')}
 
         self.colours, self.factor, self.sort_keys, self.zphase, self.zerokey, self.zeromedian = self._initialize_plot_data()
         self._compute_initial_period()
@@ -131,7 +131,7 @@ class PeriodPlotter:
             valmin=0,
             valmax=1,
             valinit=self.init_period,
-            valstep=0.0000005,
+            valstep=0.0005,
             valfmt='%.9f'
         )
         slider.val = self.init_period

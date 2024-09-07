@@ -3,6 +3,8 @@ from pathlib import Path
 
 import pandas as pd
 from astropy.table import Table
+from astroquery.gaia import Gaia
+from astroquery.simbad import Simbad
 from numpy import log
 
 from utils.period_utils import prepareTable
@@ -41,14 +43,33 @@ def bjd_tcb_to_mjd(bjd_tcb_date: float) -> float:
     return mjd
 
 
+def get_star_gaia_id(star_name: str) -> str:
+    """
+    Transform a star name or identifier to a Gaia DR3 ID
+    using the Simbad service.
+    :param star_name: The name or identifier of the star.
+    """
+    Simbad.add_votable_fields('ids')
+    result_table = Simbad.query_object(star_name)
+    if result_table is not None:
+        gaia_id = None
+        for row in result_table['IDS'][0].split('|'):
+            if 'Gaia DR3' in row:
+                gaia_id = row.split()[-1]
+                break
+        if gaia_id is not None:
+            return gaia_id
+    raise ValueError(f'No star found with the name {star_name}')
+
+
 def parse_gaia_photometry(gaia_photometry: pd.DataFrame) -> dict[str, pd.DataFrame]:
     """
     Parse the Gaia Epoch photometry data to a format that can be used by the optimizer.
     :param gaia_photometry: The Gaia Epoch photometry data.
     :return: The parsed Gaia photometry data in a dictionary with the filter as the key.
     """
-    gaia_photometry = gaia_photometry[~gaia_photometry['rejected_by_photometry']
-                                      & ~gaia_photometry['rejected_by_variability']]
+    gaia_photometry = gaia_photometry[(gaia_photometry['rejected_by_photometry'] == 'false')
+                                      & (gaia_photometry['rejected_by_variability'] == 'false')]
     gaia_photometry['MAG_AUTO_NORM'] = gaia_photometry['mag']
     gaia_photometry['MAGERR_AUTO'] = flux_to_magnitude_error(
         gaia_photometry['flux'], gaia_photometry['flux_error'])
@@ -63,31 +84,82 @@ def parse_gaia_photometry(gaia_photometry: pd.DataFrame) -> dict[str, pd.DataFra
     return gaia_photometry_data
 
 
+def get_gaia_photometry(star_id: str) -> pd.DataFrame:
+    """
+    Get the Gaia epoch photometry data for a given star
+    using the Gaia catalog data with astroquery.
+    :param star_id: The ID of a star, which can be a Gaia ID 
+        or a valid Simbad name or identifier.
+    :return: The Gaia photometry data for the given star.
+    """
+    if not star_id.startswith('GAIA'):
+        gaia_id = get_star_gaia_id(star_id)
+    else:
+        gaia_id = star_id.split('_')[-1]
+    datalink: dict = Gaia.load_data(
+        ids=gaia_id, retrieval_type='EPOCH_PHOTOMETRY', valid_data=True, format='csv')
+    data_table: Table = datalink[next(iter(datalink))][0]
+    return data_table.to_pandas()
+
+
+def get_gaia_period(star_id: str) -> float:
+    """
+    Get the period of a star using the astroquery Gaia service.
+    :param star_id: The ID of a star, which can be a Gaia ID 
+        or a valid Simbad name or identifier.
+    """
+    if not star_id.startswith('GAIA'):
+        gaia_id = get_star_gaia_id(star_id)
+    else:
+        gaia_id = star_id.split('_')[-1]
+    query = f"""
+        SELECT rrl.pf AS period
+        FROM gaiadr3.vari_rrlyrae AS rrl
+        WHERE rrl.source_id = {gaia_id}
+    """
+    job = Gaia.launch_job(query)
+    result = job.get_results()
+    if len(result) == 0:
+        raise ValueError(f'No Gaia period data found for star {star_id}')
+    return float(result['period'][0])
+
+
+def filter_photometry_data(photometry_data: dict[str, pd.DataFrame], id_filename: str) -> dict[str, pd.DataFrame]:
+    """
+    Filter our photometry data to discard data from other stars.
+    :param photometry_data: The photometry data for a given star.
+    :param id_filename: The filename of the file with the star ID.
+    :return: The filtered photometry data for the given star.
+    """
+    if os.path.exists(id_filename):
+        varid = Table.read(id_filename, hdu=1)[0][0]
+        pd.options.mode.chained_assignment = None
+        filtered_data = {}
+        for key in photometry_data:
+            if 'Gaia' not in key:
+                filtered_data[key] = photometry_data[key].loc[photometry_data[key].ID == varid, :]
+            else:
+                filtered_data[key] = photometry_data[key]
+        return filtered_data
+    return photometry_data
+
+
 def get_star_photometry(photometry_path: str) -> dict[str, pd.DataFrame]:
     """
     Get the prepared photometry data for a given star as a dict of dataframes for each filter.
     :param photometry_path: The path to the photometry data for the given star. 
     :return: The photometry data for the given star.
     """
-    START_ID = Path(photometry_path).stem
+    STAR_ID = Path(photometry_path).stem
     photometry_data = {}
     for photometry_file in os.listdir(photometry_path):
         if photometry_file.startswith('cat_'):
             photometry_data[photometry_file.split('.')[0].split(
                 '_')[-1]] = prepareTable(photometry_path+'/'+photometry_file, 1)
-        elif photometry_file.startswith('EPOCH_PHOTOMETRY-Gaia DR3'):
-            gaia_photometry = parse_gaia_photometry(Table.read(
-                photometry_path+'/'+photometry_file, hdu=1).to_pandas())
-            for filter_key in gaia_photometry:
-                photometry_data['Gaia-' +
-                                filter_key] = gaia_photometry[filter_key]
-    varid = Table.read(photometry_path+"/finalIDs_" +
-                       START_ID+".fits", hdu=1)[0][0]
-    pd.options.mode.chained_assignment = None
-    filtered_data = {}
-    for key in photometry_data:
-        if 'Gaia' not in key:
-            filtered_data[key] = photometry_data[key].loc[photometry_data[key].ID == varid, :]
-        else:
-            filtered_data[key] = photometry_data[key]
-    return filtered_data
+    gaia_photometry = parse_gaia_photometry(get_gaia_photometry(STAR_ID))
+    for filter_key in gaia_photometry:
+        photometry_data['Gaia-' + filter_key] = gaia_photometry[filter_key]
+
+    photometry_data = filter_photometry_data(
+        photometry_data, photometry_path+"/finalIDs_" + STAR_ID+".fits")
+    return photometry_data

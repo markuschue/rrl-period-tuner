@@ -158,8 +158,13 @@ def get_star_photometry(photometry_path: str, star_id: str | None = None, idstr:
     photometry_data = {}
     for photometry_file in os.listdir(photometry_path):
         if photometry_file.startswith('cat_'):
-            photometry_data[photometry_file.split('.')[0].split(
-                '_')[-1]] = prepareTable(photometry_path+'/'+photometry_file, 1)
+            filename_components = photometry_file.split('.')[0].split('_')
+            if filename_components[-1] == 'final':
+                band = filename_components[-2]
+            else:
+                band = filename_components[-1]
+            photometry_data[band] = prepareTable(
+                photometry_path+'/'+photometry_file, 1)
     gaia_photometry = parse_gaia_photometry(
         get_gaia_photometry(star_id), idstr, magstr, magerrstr, datestr)
     for band in gaia_photometry:

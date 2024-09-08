@@ -12,14 +12,15 @@ from astropy.time import Time
 from astropy.timeseries import LombScargle
 
 
-def compute_period(data, datestr, magstr, magerrstr):
+def compute_period(data: dict, datestr: str, magstr: str, magerrstr: str, enable_log=True):
     epoch, mag, mag_err = [data[datestr].values,
                            data[magstr].values, data[magerrstr].values]
     NN = 2000
     period_array = np.zeros(NN)
 
-    print("")
-    print("Performing bootstrap to compute best period...")
+    if enable_log:
+        print("")
+        print("Performing bootstrap to compute best period...")
     for ii in range(NN):
         rng = np.random.default_rng(42)
         loc_new = rng.choice(
@@ -34,7 +35,7 @@ def compute_period(data, datestr, magstr, magerrstr):
         best_freq = freq[np.argmax(power)]
         period_array[ii] = 1/best_freq
 
-        if (ii % 50) == 0:
+        if (ii % 50) == 0 and enable_log:
             sys.stdout.write('\r')
             # the exact output you're looking for:
             perc = int(np.round(ii/NN * 100))
@@ -46,7 +47,8 @@ def compute_period(data, datestr, magstr, magerrstr):
     possible_periods = np.c_[possible_periods, counts]
 
     best_period = sp.stats.mode(np.round(period_array, 9))[0]
-    sys.stdout.write('\r')
+    if enable_log:
+        sys.stdout.write('\r')
     return best_period, np.flip(possible_periods[np.argsort(possible_periods[:, 1])], axis=0)[:8]
 
 

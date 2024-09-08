@@ -4,16 +4,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from utils.data_utils import get_star_lookup_data, get_star_photometry
+from utils.data_utils import get_gaia_period, get_star_photometry
 from utils.period_utils import compute_period
 
 
 class ObservationsOptimizer:
-    def __init__(self, star_id: str, photometry_path: str, periods_path: str, only_combined: bool = False, load_from_file: bool = False):
+    def __init__(self, star_id: str, photometry_path: str, save_path: str, compute_combined: bool = False, compute_individuals: bool = True, load_from_file: bool = False):
         self.star_id = star_id
         self.photometry_path = photometry_path
-        self.periods_path = periods_path
-        self.only_combined = only_combined
+        self.save_path = save_path
+        self.compute_combined = compute_combined
+        self.compute_individuals = compute_individuals
         self.load_from_file = load_from_file
         self.periods_by_observation_number = {}
         self.photometry_data = None
@@ -47,14 +48,6 @@ class ObservationsOptimizer:
         # Return sorted dict by observation number, since it may not be in order because of the multithreading
         return dict(sorted(periods_by_observation_number.items()))
 
-    def get_gaia_period(self) -> float:
-        """
-        Get the period of a star using Gaia data.
-        """
-        gaia_id = self.star_id.split('_')[-1]
-        gaia_data = get_star_lookup_data(gaia_id)
-        return gaia_data['rrl.pf'].values[0]
-
     def find_min_observations(self, data: dict, std_threshold=0.005, window=5):
         """
         Find the minimum number of observations required to stabilize the period using rolling standard deviation.
@@ -83,7 +76,7 @@ class ObservationsOptimizer:
         if title is not None:
             plt.title(title)
         for key in self.periods_by_observation_number:
-            print(f'Last period found for {key}: {self.periods_by_observation_number[key][max(
+            print(f'Last period computed for {key}: {self.periods_by_observation_number[key][max(
                 self.periods_by_observation_number[key].keys())]}')
             min_observations = self.find_min_observations(
                 self.periods_by_observation_number[key])
@@ -94,7 +87,8 @@ class ObservationsOptimizer:
                       self.periods_by_observation_number[key][min_observations]}')
                 plt.plot([min_observations, min_observations], [0, 1],
                          label='Stabilization Point for ' + key, linestyle='--')
-        gaia_period = self.get_gaia_period()
+        gaia_period = get_gaia_period(self.star_id)
+        print(f'Fetched Gaia Period: {gaia_period}')
         plt.plot([0, max(self.periods_by_observation_number[key].keys())], [gaia_period, gaia_period],
                  label='Gaia Period', linestyle='--')
         plt.legend()
@@ -105,19 +99,21 @@ class ObservationsOptimizer:
         Optimize the number of observations needed to stabilize the period for the star.
         """
         if not self.load_from_file:
-            self.photometry_data = get_star_photometry(self.photometry_path)
+            self.photometry_data = get_star_photometry(
+                self.photometry_path, self.star_id)
             combined_photometry = pd.concat(self.photometry_data.values())
-            self.periods_by_observation_number = {
-                "Combined": self.get_periods_by_observation_number(combined_photometry)
-            }
-            if not self.only_combined:
+            if self.compute_combined:
+                self.periods_by_observation_number = {
+                    "Combined": self.get_periods_by_observation_number(combined_photometry)
+                }
+            if self.compute_individuals:
                 for key in self.photometry_data:
                     self.periods_by_observation_number[key] = self.get_periods_by_observation_number(
                         self.photometry_data[key])
-            np.save(self.periods_path, self.periods_by_observation_number)
+            np.save(self.save_path, self.periods_by_observation_number)
         else:
             self.periods_by_observation_number = np.load(
-                self.periods_path + '.npy', allow_pickle=True).item()
+                self.save_path + '.npy', allow_pickle=True).item()
 
         self.plot_periods_by_observation_number(
             self.star_id + ' Periods by Observation Number')
@@ -128,7 +124,8 @@ class ObservationsOptimizer:
         and plot it to see if the period stabilizes or takes erratic values at some point.
         """
         if not self.load_from_file:
-            self.photometry_data = get_star_photometry(self.photometry_path)
+            self.photometry_data = get_star_photometry(
+                self.photometry_path, self.star_id)
             combined_gaia_photometry = pd.concat(
                 [self.photometry_data[key] for key in self.photometry_data if key.startswith('Gaia-')])
             combined_own_photometry = pd.concat(
@@ -151,23 +148,24 @@ class ObservationsOptimizer:
 
             self.plot_periods_by_observation_number(
                 'Sequentially adding our observations to Gaia\'s for ' + self.star_id)
-            np.save(self.periods_path + '_seq.npy',
+            np.save(self.save_path + '_seq.npy',
                     self.periods_by_observation_number)
         else:
             self.periods_by_observation_number = np.load(
-                self.periods_path + '_seq.npy', allow_pickle=True).item()
+                self.save_path + '_seq.npy', allow_pickle=True).item()
             self.plot_periods_by_observation_number(
                 'Sequentially adding our observations to Gaia\'s for ' + self.star_id)
 
 
 if __name__ == '__main__':
-    STAR_ID = 'GAIA03_1360607637502749440'
-    PHOTOMETRY_PATH = 'data/photometry/' + STAR_ID
-    PERIODS_PATH = 'data/periods/' + STAR_ID
-    ONLY_COMBINED = False
-    LOAD_FROM_FILE = False
 
     optimizer = ObservationsOptimizer(
-        STAR_ID, PHOTOMETRY_PATH, PERIODS_PATH, ONLY_COMBINED, LOAD_FROM_FILE)
-    # optimizer.optimize_observations()
-    optimizer.sequentially_add_observations_to_gaia()
+        star_id='RR Gem',
+        photometry_path='data/photometry/RR18_RRGem',
+        save_path='data/periods/RRGem',
+        compute_combined=True,
+        compute_individuals=True,
+        load_from_file=True
+    )
+    optimizer.optimize_observations()
+    # optimizer.sequentially_add_observations_to_gaia()

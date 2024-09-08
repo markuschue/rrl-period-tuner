@@ -1,6 +1,5 @@
 import glob
 import os
-import sys
 from datetime import datetime
 from typing import Any, Dict, Tuple
 
@@ -13,17 +12,23 @@ from matplotlib.ticker import AutoMinorLocator
 from matplotlib.widgets import Button, Slider, TextBox
 
 from utils.data_utils import get_star_photometry
-from utils.period_utils import compute_period, prepareTable
+from utils.period_utils import compute_period
 
 
 class PeriodPlotter:
-    def __init__(self, base_dir: str) -> None:
+    def __init__(self, star_id: str, base_dir: str, periods_path: str, idstr: str = "ID", magstr: str = "MAG_AUTO_NORM", magerrstr: str = "MAGERR_AUTO", datestr: str = "DATE-OBS"):
+        self.star_id = star_id
         self.bdir = base_dir
-        self.datestr = "DATE-OBS"
-        self.magstr, self.magerrstr, self.final, self.strfilt = self._get_field_names()
+        self.periods_path = periods_path
+
+        self.idstr = idstr
+        self.magstr = magstr
+        self.magerrstr = magerrstr
+        self.datestr = datestr
+
         self.obj = self._get_object_name()
-        self.varid = self._load_varid()
-        self.data = get_star_photometry(self.bdir)
+        self.data = get_star_photometry(
+            self.bdir, self.star_id, self.idstr, self.magstr, self.magerrstr, self.datestr)
         # self.data = {key: self.data[key]
         #              for key in self.data if key.startswith('Gaia')}
 
@@ -45,24 +50,8 @@ class PeriodPlotter:
         self.fig.canvas.mpl_connect(
             'key_release_event', self.arrow_key_image_control)
 
-    def _get_field_names(self) -> tuple[str, str, str, int]:
-        if len(glob.glob(self.bdir + "*final.fits")) > 0:
-            return "MAG_FINAL", "MAGERR_FINAL", "final", -7
-        else:
-            return "MAG_AUTO_NORM", "MAGERR_AUTO", "", -1
-
     def _get_object_name(self) -> str:
         return os.path.basename(os.path.normpath(self.bdir))
-
-    def _load_varid(self) -> Any:
-        return Table.read(self.bdir + f"finalIDs_{self.obj}.fits", hdu=1)[0][0]
-
-    def _load_catalogs(self, files: list[str]) -> Dict[str, pd.DataFrame]:
-        data = {}
-        for line in files:
-            key = os.path.splitext(line)[0][self.strfilt]
-            data[key] = prepareTable(line, 1)
-        return data
 
     def _initialize_plot_data(self) -> Tuple[Dict[str, np.ndarray], Dict[str, float], pd.Series, str, float]:
         colours = plt.cm.rainbow(np.linspace(0, 1, len(self.data)))
@@ -89,8 +78,7 @@ class PeriodPlotter:
                          1080 / (96 * 1.25)), dpi=100)
         phase_plot = fig.add_subplot(122)
 
-        fig.suptitle(self.obj.split("_")[
-                     1][:-3] + " " + self.obj.split("_")[1][-3:], size=24, y=0.925)
+        fig.suptitle(self.star_id, size=24, y=0.925)
         phase_plot.set_xlabel("Phase", size=15, y=1.05)
         phase_plot.set_ylabel("Magnitude", size=15, x=0.25)
         phase_plot.xaxis.set_minor_locator(AutoMinorLocator())
@@ -170,10 +158,14 @@ class PeriodPlotter:
         print(str(datetime.now() - start) +
               " s elapsed while computing period")
 
-        self.rr = Table.read('.\\data\\photometry\\periods.txt',
+        self.rr = Table.read(self.periods_path,
                              format='ascii', names=["star", "period"]).to_pandas()
         period_tabulated = self.rr.loc[self.rr["star"].str.contains(
-            self.obj.split("_")[0]), "period"].iloc[0]
+            self.obj.split("_")[0]), "period"]
+        if len(period_tabulated) == 0:
+            period_tabulated = self.best_period
+        else:
+            period_tabulated = period_tabulated.iloc[0]
 
         print(f"\nComputed period {self.best_period:.9f}, tabulated period {
               period_tabulated:.9f}")
@@ -290,6 +282,8 @@ class PeriodPlotter:
         self.periodogram.axvline(self.init_period, 0, 1, color='k',
                                  ls=(0, (5, 5)), alpha=0.5)
 
+        self.fig.canvas.draw_idle()
+
     def submit_step(self, text: str) -> None:
         try:
             step = float(text)
@@ -321,12 +315,26 @@ class PeriodPlotter:
         self.rr.loc[self.rr["star"].str.contains(
             self.obj.split("_")[0]), "period"] = self.freq_slider.val
         Table.from_pandas(self.rr).write(
-            '.\\data\\photometry\\periods.txt', format='ascii', overwrite=True)
+            self.periods_path, format='ascii', overwrite=True)
 
         return None
 
 
+def _get_mag_field_names(photometry_path: str) -> tuple[str, str]:
+    if len(glob.glob(photometry_path + "*final.fits")) > 0:
+        return "MAG_FINAL", "MAGERR_FINAL"
+    else:
+        return "MAG_AUTO_NORM", "MAGERR_AUTO"
+
+
 if __name__ == "__main__":
-    base_dir = ".\\data\\photometry\\GAIA03_1360607637502749440\\"
-    plotter = PeriodPlotter(base_dir)
+    PHOTOMETRY_PATH = 'data/photometry/RR12_XAri/'
+    magstr, magerrstr = _get_mag_field_names(
+        PHOTOMETRY_PATH)
+    plotter = PeriodPlotter(
+        star_id='X Ari',
+        base_dir=PHOTOMETRY_PATH,
+        periods_path='data/photometry/periods.txt',
+        magstr=magstr,
+        magerrstr=magerrstr)
     plt.show()

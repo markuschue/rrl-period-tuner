@@ -62,25 +62,27 @@ def get_star_gaia_id(star_name: str) -> str:
     raise ValueError(f'No star found with the name {star_name}')
 
 
-def parse_gaia_photometry(gaia_photometry: pd.DataFrame) -> dict[str, pd.DataFrame]:
+def parse_gaia_photometry(gaia_photometry: pd.DataFrame, idstr: str = "ID", magstr: str = "MAG_AUTO_NORM", magerrstr: str = "MAGERR_AUTO", datestr: str = "DATE-OBS") -> dict[str, pd.DataFrame]:
     """
     Parse the Gaia Epoch photometry data to a format that can be used by the optimizer.
     :param gaia_photometry: The Gaia Epoch photometry data.
+    :param magstr: The name that will be assigned to the magnitude column.
+    :param magerrstr: The name that will be assigned to the magnitude error column.
     :return: The parsed Gaia photometry data in a dictionary with the filter as the key.
     """
     gaia_photometry = gaia_photometry[(gaia_photometry['rejected_by_photometry'] == 'false')
                                       & (gaia_photometry['rejected_by_variability'] == 'false')]
-    gaia_photometry['MAG_AUTO_NORM'] = gaia_photometry['mag']
-    gaia_photometry['MAGERR_AUTO'] = flux_to_magnitude_error(
+    gaia_photometry[magstr] = gaia_photometry['mag']
+    gaia_photometry[magerrstr] = flux_to_magnitude_error(
         gaia_photometry['flux'], gaia_photometry['flux_error'])
-    gaia_photometry['DATE-OBS'] = bjd_tcb_to_mjd(gaia_photometry['time'])
-    gaia_photometry['ID'] = gaia_photometry['source_id']
+    gaia_photometry[datestr] = bjd_tcb_to_mjd(gaia_photometry['time'])
+    gaia_photometry[idstr] = gaia_photometry['source_id']
     gaia_photometry_data = {}
     for filter_key in gaia_photometry['band'].unique():
         parsed_filter_key = str(filter_key)
         gaia_photometry_data[parsed_filter_key] = gaia_photometry[gaia_photometry['band'] == filter_key]
         gaia_photometry_data[parsed_filter_key] = gaia_photometry_data[parsed_filter_key][[
-            'ID', 'DATE-OBS', 'MAG_AUTO_NORM', 'MAGERR_AUTO']].copy()
+            idstr, datestr, magstr, magerrstr]].copy()
     return gaia_photometry_data
 
 
@@ -144,22 +146,25 @@ def filter_photometry_data(photometry_data: dict[str, pd.DataFrame], id_filename
     return photometry_data
 
 
-def get_star_photometry(photometry_path: str) -> dict[str, pd.DataFrame]:
+def get_star_photometry(photometry_path: str, star_id: str | None = None, idstr: str = "ID", magstr: str = "MAG_AUTO_NORM", magerrstr: str = "MAGERR_AUTO", datestr: str = "DATE-OBS") -> dict[str, pd.DataFrame]:
     """
     Get the prepared photometry data for a given star as a dict of dataframes for each filter.
     :param photometry_path: The path to the photometry data for the given star. 
     :return: The photometry data for the given star.
     """
-    STAR_ID = Path(photometry_path).stem
+    if star_id is None:
+        star_id = Path(photometry_path).stem
+
     photometry_data = {}
     for photometry_file in os.listdir(photometry_path):
         if photometry_file.startswith('cat_'):
             photometry_data[photometry_file.split('.')[0].split(
                 '_')[-1]] = prepareTable(photometry_path+'/'+photometry_file, 1)
-    gaia_photometry = parse_gaia_photometry(get_gaia_photometry(STAR_ID))
-    for filter_key in gaia_photometry:
-        photometry_data['Gaia-' + filter_key] = gaia_photometry[filter_key]
+    gaia_photometry = parse_gaia_photometry(
+        get_gaia_photometry(star_id), idstr, magstr, magerrstr, datestr)
+    for band in gaia_photometry:
+        photometry_data['Gaia-' + band] = gaia_photometry[band]
 
     photometry_data = filter_photometry_data(
-        photometry_data, photometry_path+"/finalIDs_" + STAR_ID+".fits")
+        photometry_data, photometry_path+"/finalIDs_" + star_id+".fits")
     return photometry_data

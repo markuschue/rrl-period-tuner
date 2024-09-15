@@ -11,7 +11,7 @@ from astropy.timeseries import LombScargle
 from matplotlib.ticker import AutoMinorLocator
 from matplotlib.widgets import Button, Slider, TextBox
 
-from utils.data_utils import get_star_photometry
+from utils.data_utils import combine_photometry_data, get_star_photometry
 from utils.period_utils import compute_period
 
 
@@ -30,7 +30,8 @@ class PeriodPlotter:
         self.data = get_star_photometry(
             self.bdir, self.star_id, self.idstr, self.magstr, self.magerrstr, self.datestr)
         # self.data = {key: self.data[key]
-        #              for key in self.data if key.startswith('Gaia')}
+        #              for key in self.data if not key.startswith('Gaia')}
+        self.data["Combined"] = combine_photometry_data(self.data)
 
         self.colours, self.factor, self.sort_keys, self.zphase, self.zerokey, self.zeromedian = self._initialize_plot_data()
         self._compute_initial_period()
@@ -154,7 +155,7 @@ class PeriodPlotter:
     def _compute_initial_period(self) -> None:
         start = datetime.now()
         self.best_period, self.possible_periods = compute_period(
-            self.data[self.zerokey], self.datestr, self.magstr, self.magerrstr)
+            self.data["Combined"], self.datestr, self.magstr, self.magerrstr)
         print(str(datetime.now() - start) +
               " s elapsed while computing period")
 
@@ -172,7 +173,7 @@ class PeriodPlotter:
         print("Possible periods")
         print(self.possible_periods)
 
-        self.init_period = period_tabulated
+        self.init_period = self.best_period
 
     def _initialize_periodogram(self) -> plt.Axes:
         periodogram_plot = self.fig.add_subplot(221)
@@ -328,11 +329,11 @@ def _get_mag_field_names(photometry_path: str) -> tuple[str, str]:
 
 
 if __name__ == "__main__":
-    PHOTOMETRY_PATH = 'data/photometry/RR12_XAri/'
+    PHOTOMETRY_PATH = 'data/photometry/RR12_XAri'
     magstr, magerrstr = _get_mag_field_names(
         PHOTOMETRY_PATH)
     plotter = PeriodPlotter(
-        star_id='X Ari',
+        star_id=f'X Ari',
         base_dir=PHOTOMETRY_PATH,
         periods_path='data/photometry/periods.txt',
         magstr=magstr,

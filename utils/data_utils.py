@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 from astropy.table import Table
+from astropy.time import Time
 from astroquery.gaia import Gaia
 from astroquery.simbad import Simbad
 from numpy import log
@@ -94,10 +95,7 @@ def get_gaia_photometry(star_id: str) -> pd.DataFrame:
         or a valid Simbad name or identifier.
     :return: The Gaia photometry data for the given star.
     """
-    if not star_id.startswith('GAIA'):
-        gaia_id = get_star_gaia_id(star_id)
-    else:
-        gaia_id = star_id.split('_')[-1]
+    gaia_id = get_star_gaia_id(star_id)
     datalink: dict = Gaia.load_data(
         ids=gaia_id, retrieval_type='EPOCH_PHOTOMETRY', valid_data=True, format='csv')
     data_table: Table = datalink[next(iter(datalink))][0]
@@ -110,10 +108,7 @@ def get_gaia_period(star_id: str) -> float:
     :param star_id: The ID of a star, which can be a Gaia ID 
         or a valid Simbad name or identifier.
     """
-    if not star_id.startswith('GAIA'):
-        gaia_id = get_star_gaia_id(star_id)
-    else:
-        gaia_id = star_id.split('_')[-1]
+    gaia_id = get_star_gaia_id(star_id)
     query = f"""
         SELECT rrl.pf AS period
         FROM gaiadr3.vari_rrlyrae AS rrl
@@ -146,14 +141,42 @@ def filter_photometry_data(photometry_data: dict[str, pd.DataFrame], id_filename
     return photometry_data
 
 
+def add_datetime_column(data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add a column to the data with the datetime values for each observation.
+    :param data: The photometry data for a given star.
+    """
+    data['DATETIME'] = Time(data['DATE-OBS'], format='mjd').to_datetime()
+    data = data.sort_values('DATETIME')
+    return data
+
+
+def combine_photometry_data(photometry_data: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    """
+    Combine the photometry data for a given star into a single dataframe.
+    :param photometry_data: The photometry data for a given star.
+    :return: The combined photometry data for the given star.
+    """
+    combined_data = pd.DataFrame()
+    for key in photometry_data:
+        photometry_data[key]['FILTER'] = key
+        combined_data = pd.concat(
+            [combined_data, photometry_data[key]], ignore_index=True, sort=False)
+    return combined_data
+
+
 def get_star_photometry(photometry_path: str, star_id: str | None = None, idstr: str = "ID", magstr: str = "MAG_AUTO_NORM", magerrstr: str = "MAGERR_AUTO", datestr: str = "DATE-OBS") -> dict[str, pd.DataFrame]:
     """
     Get the prepared photometry data for a given star as a dict of dataframes for each filter.
     :param photometry_path: The path to the photometry data for the given star. 
     :return: The photometry data for the given star.
     """
+    file_star_id = Path(photometry_path).stem
+
     if star_id is None:
-        star_id = Path(photometry_path).stem
+        star_id = file_star_id
+
+    finalIDs_file_path = photometry_path+"/finalIDs_" + file_star_id + ".fits"
 
     photometry_data = {}
     for photometry_file in os.listdir(photometry_path):
@@ -163,13 +186,14 @@ def get_star_photometry(photometry_path: str, star_id: str | None = None, idstr:
                 band = filename_components[-2]
             else:
                 band = filename_components[-1]
-            photometry_data[band] = prepareTable(
-                photometry_path+'/'+photometry_file, 1)
+            photometry_data[band] = add_datetime_column(prepareTable(
+                photometry_path+'/'+photometry_file, 1))
     gaia_photometry = parse_gaia_photometry(
         get_gaia_photometry(star_id), idstr, magstr, magerrstr, datestr)
     for band in gaia_photometry:
-        photometry_data['Gaia-' + band] = gaia_photometry[band]
+        photometry_data['Gaia-' +
+                        band] = add_datetime_column(gaia_photometry[band])
 
     photometry_data = filter_photometry_data(
-        photometry_data, photometry_path+"/finalIDs_" + star_id+".fits")
+        photometry_data, finalIDs_file_path)
     return photometry_data

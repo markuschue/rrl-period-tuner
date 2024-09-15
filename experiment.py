@@ -9,11 +9,11 @@ import numpy as np
 import pandas as pd
 from astropy.table import Table
 from astropy.timeseries import LombScargle
-from functions import prepareTable
 from matplotlib.ticker import AutoMinorLocator
 from matplotlib.widgets import Button, Slider, TextBox
-from prueba_lombscargle import compute_period
 
+from benchmark.period.functions import prepareTable
+from benchmark.period.prueba_lombscargle import compute_period
 from utils.data_utils import get_star_photometry
 
 
@@ -149,9 +149,9 @@ matplotlib.rc('ytick', labelsize=16)
 resolution = (1920/96, 1080/96)
 
 
-bdir = sys.argv[1]+"/"
+bdir = sys.argv[1]
 
-if len(glob.glob(bdir+"*final.fits")) > 0:
+if len(glob.glob(bdir+"/*final.fits")) > 0:
     magstr = "MAG_FINAL"
     magerrstr = "MAGERR_FINAL"
     final = "final"
@@ -166,20 +166,20 @@ datestr = "DATE-OBS"
 
 # List of objects, with their ID and periods.
 obj = os.path.basename(os.path.normpath(bdir))
-varid = Table.read(bdir+"finalIDs_"+obj+".fits", hdu=1)[0][0]
+varid = Table.read(bdir+"/finalIDs_"+obj+".fits", hdu=1)[0][0]
 
 # Load the general catalogs, with all the stars in the field.
-cats = glob.glob(bdir+"cat_"+obj+"*"+final+".fits")
+cats = glob.glob(bdir+"/cat_"+obj+"*"+final+".fits")
 data = {}
 for line in cats:
     data[os.path.splitext(line)[0][strfilt]] = prepareTable(line, 1)
 
 # Generate a dictionary extracting only the variable star from the general catalog.
-# rrl = {}
-# pd.options.mode.chained_assignment = None
-# for key in data:
-#     rrl[key] = data[key].loc[data[key].ID == varid, :]
-rrl = get_star_photometry(bdir, star_id=varid)
+rrl = {}
+pd.options.mode.chained_assignment = None
+for key in data:
+    rrl[key] = data[key].loc[data[key].ID == varid, :]
+rrl2 = get_star_photometry(bdir, star_id='GAIA DR3 ' + bdir.split('_')[-1])
 
 # Define two dictionaries: colours for each filter, and artificial shift in each filter.
 colours = plt.cm.rainbow(np.linspace(0, 1, len(rrl)))

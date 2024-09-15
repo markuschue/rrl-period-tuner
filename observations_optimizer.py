@@ -3,9 +3,9 @@ import concurrent.futures
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from astropy.time import Time
 
-from utils.data_utils import get_gaia_period, get_star_photometry
+from utils.data_utils import (combine_photometry_data, get_gaia_period,
+                              get_star_photometry)
 from utils.period_utils import compute_period
 
 
@@ -20,26 +20,22 @@ class ObservationsOptimizer:
         self.periods_by_observation_number = {}
         self.photometry_data = None
         self.observations_step = observations_step
-        self.time_differences = [5, 10, 15, 20, 30, 45, 60]
-
-    def add_time_difference_column(self, data: pd.DataFrame) -> pd.DataFrame:
-        """
-        Add a column to the data with the time difference between observations.
-        :param data: The photometry data for a given star.
-        """
-        data['DATETIME'] = Time(data['DATE-OBS'], format='mjd').to_datetime()
-        data = data.sort_values('DATETIME')
-        data['TIME_DIFF'] = data['DATETIME'].diff()
-        return data
+        self.time_differences = [30, 60, 90, 120]
 
     def filter_observations_by_time_difference(self, data: pd.DataFrame, time_difference: int) -> pd.DataFrame:
         """
-        Filter the observations by a given time difference between them.
+        Filter the observations so that each observation has is separated by at least the given time difference.
         :param data: The photometry data for a given star, with the time difference column added.
         :param time_difference: The time difference between observations in minutes.
         """
         time_diff_delta = pd.Timedelta(minutes=time_difference)
-        return data[data['TIME_DIFF'] >= time_diff_delta]
+        filtered_data = data.copy()
+        for idx, row in data.iterrows():
+            if idx == 0:
+                continue
+            if idx - 1 in data.index and row['DATETIME'] - data.loc[idx - 1, 'DATETIME'] < time_diff_delta:
+                filtered_data.drop(idx, inplace=True)
+        return filtered_data
 
     def compute_period_for_observations(self, data: pd.DataFrame, observations: int) -> tuple:
         """
@@ -117,7 +113,8 @@ class ObservationsOptimizer:
         for idx, time_diff in enumerate(self.time_differences):
             # Handle case when there's only one subplot
             ax = axs[idx] if num_time_diffs > 1 else axs
-            ax.set_xlabel('Number of Observations')
+            if idx == len(self.time_differences) - 1:
+                ax.set_xlabel('Number of Observations')
             ax.set_ylabel('Period')
             ax.set_title(f'Time Difference: {time_diff}')
 
@@ -142,10 +139,9 @@ class ObservationsOptimizer:
             ax.plot([0, max(periods_data.keys())], [gaia_period,
                     gaia_period], label='Gaia Period', linestyle='--')
 
-            ax.legend()
-
-        # Adjust the layout to prevent overlap with the title
-        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        plt.legend(loc="upper left", bbox_to_anchor=(1, 1))
+        # Adjust the layout to prevent overlap with the title and legend
+        plt.tight_layout(rect=[0.05, 0.05, 0.95, 0.95])
         plt.show()
 
     def optimize_observations(self):
@@ -157,15 +153,17 @@ class ObservationsOptimizer:
                 self.photometry_data = get_star_photometry(
                     self.photometry_path, self.star_id)
                 if self.compute_combined:
-                    combined_photometry = self.add_time_difference_column(
-                        pd.concat(self.photometry_data.values()))
+                    combined_photometry = combine_photometry_data(
+                        self.photometry_data)
                     self.periods_by_observation_number[time_diff] = {
                         "Combined": self.get_periods_by_observation_number(combined_photometry, time_diff)
                     }
                 if self.compute_individuals:
                     for key in self.photometry_data:
-                        self.periods_by_observation_number[key] = self.get_periods_by_observation_number(
-                            self.add_time_difference_column(self.photometry_data[key]), time_diff)
+                        if time_diff not in self.periods_by_observation_number:
+                            self.periods_by_observation_number[time_diff] = {}
+                        self.periods_by_observation_number[time_diff][key] = self.get_periods_by_observation_number(
+                            self.photometry_data[key], time_diff)
             np.save(self.save_path, self.periods_by_observation_number)
         else:
             self.periods_by_observation_number = np.load(
@@ -216,13 +214,13 @@ class ObservationsOptimizer:
 if __name__ == '__main__':
 
     optimizer = ObservationsOptimizer(
-        star_id='RR Gem',
-        photometry_path='data/photometry/RR18_RRGem',
-        save_path='data/periods/RRGem',
-        compute_combined=False,
-        compute_individuals=True,
-        load_from_file=False,
-        observations_step=50
+        star_id='U Lep',
+        photometry_path='data/photometry/RR17_ULep',
+        save_path='data/periods/ULep_combined_only',
+        compute_combined=True,
+        compute_individuals=False,
+        load_from_file=True,
+        observations_step=10
     )
     optimizer.optimize_observations()
     # optimizer.sequentially_add_observations_to_gaia()

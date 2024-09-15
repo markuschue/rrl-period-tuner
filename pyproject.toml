@@ -10,6 +10,7 @@ python = "^3.12"
 matplotlib = "^3.9.1"
 pandas = "^2.2.2"
 astropy = "^6.1.2"
+astroquery = "^0.4.7"
 
 
 [build-system]

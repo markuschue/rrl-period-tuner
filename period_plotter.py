@@ -31,16 +31,16 @@ class PeriodPlotter:
             self.bdir, self.star_id, self.idstr, self.magstr, self.magerrstr, self.datestr)
         # self.data = {key: self.data[key]
         #              for key in self.data if not key.startswith('Gaia')}
-        self.data["Combined"] = combine_photometry_data(self.data)
+        # self.data["Combined"] = combine_photometry_data(self.data)
 
         self.colours, self.factor, self.sort_keys, self.zphase, self.zerokey, self.zeromedian = self._initialize_plot_data()
         self._compute_initial_period()
 
         self.fig, self.phase_plot, self.lclist = self._initialize_fig()
         self.freq_slider = self._initialize_slider()
-        self._initialize_reset_button()
+        self.reset_button = self._initialize_reset_button()
         self.currentstep, self.currentperiod = self._initialize_text_boxes()
-        self._initialize_confirm_period_button()
+        self.confirm_button = self._initialize_confirm_period_button()
         self.periodogram = self._initialize_periodogram()
 
         self.fig.canvas.mpl_connect(
@@ -130,16 +130,18 @@ class PeriodPlotter:
 
     def _initialize_text_boxes(self) -> Tuple[plt.Text, plt.Text]:
         axbox = self.fig.add_axes([0.65, 0.935, 0.15, 0.04])
-        text_box = TextBox(axbox, "Period step", textalignment="center")
-        text_box.label.set_fontsize(16)
-        text_box.on_submit(self.submit_step)
+        self.text_box_step = TextBox(ax=axbox, label="Period step",
+                                     textalignment="center")
+        self.text_box_step.label.set_fontsize(16)
+        self.text_box_step.on_submit(self.submit_step)
         currentstep = self.fig.text(0.65, 0.91, s=(
             "Current: %.9f" % self.freq_slider.valstep), fontsize=15)
 
         axbox2 = self.fig.add_axes([0.2, 0.935, 0.15, 0.04])
-        text_box2 = TextBox(axbox2, "Period", textalignment="center")
-        text_box2.label.set_fontsize(16)
-        text_box2.on_submit(self.submit_period)
+        self.text_box_period = TextBox(
+            ax=axbox2, label="Period", textalignment="center")
+        self.text_box_period.label.set_fontsize(16)
+        self.text_box_period.on_submit(self.submit_period)
         currentperiod = self.fig.text(0.2, 0.91, s=(
             "Current: %.9f" % self.freq_slider.val), fontsize=15)
 
@@ -151,11 +153,12 @@ class PeriodPlotter:
                         color='#99ff99', hovercolor='#00cc66')
         button.label.set_fontsize(14)
         button.on_clicked(self.confirm)
+        return button
 
     def _compute_initial_period(self) -> None:
         start = datetime.now()
         self.best_period, self.possible_periods = compute_period(
-            self.data["Combined"], self.datestr, self.magstr, self.magerrstr)
+            self.data[self.zerokey], self.datestr, self.magstr, self.magerrstr)
         print(str(datetime.now() - start) +
               " s elapsed while computing period")
 
@@ -222,9 +225,10 @@ class PeriodPlotter:
         return lightcurve_plot
 
     def _initialize_reset_button(self) -> None:
-        axreset = self.fig.add_axes([0.8, 0.01, 0.1, 0.04])
-        button = Button(axreset, "Reset", hovercolor="0.975")
+        resetax = self.fig.add_axes([0.91, 0.5, 0.075, 0.045])
+        button = Button(resetax, 'Reset', hovercolor='0.975')
         button.on_clicked(self.reset)
+        return button
 
     def compute_phase(self, key: str, period: float) -> np.ndarray:
         return ((self.data[key][self.datestr] - self.zphase.iloc[0]) / period) % 1
@@ -272,7 +276,7 @@ class PeriodPlotter:
     def reset(self, event: Any) -> None:
         print("Resetting period to initial value")
         self.freq_slider.reset()
-        self.freq_slider.valstep = 0.0000005
+        self.freq_slider.valstep = 0.00000005
         self.freq_slider.val = self.init_period
         self.freq_slider.valmin = self.init_period*0.95
         self.freq_slider.valmax = self.init_period*1.05
@@ -329,11 +333,11 @@ def _get_mag_field_names(photometry_path: str) -> tuple[str, str]:
 
 
 if __name__ == "__main__":
-    PHOTOMETRY_PATH = 'data/photometry/RR12_XAri'
+    PHOTOMETRY_PATH = 'data/photometry/RR18_RRGem'
     magstr, magerrstr = _get_mag_field_names(
         PHOTOMETRY_PATH)
     plotter = PeriodPlotter(
-        star_id=f'X Ari',
+        star_id='RR Gem',
         base_dir=PHOTOMETRY_PATH,
         periods_path='data/photometry/periods.txt',
         magstr=magstr,

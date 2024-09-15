@@ -110,6 +110,9 @@ class ObservationsOptimizer:
         if title is not None:
             fig.suptitle(title)
 
+        gaia_period = get_gaia_period(self.star_id)
+        print(f'Fetched Gaia Period: {gaia_period}')
+
         for idx, time_diff in enumerate(self.time_differences):
             # Handle case when there's only one subplot
             ax = axs[idx] if num_time_diffs > 1 else axs
@@ -133,9 +136,6 @@ class ObservationsOptimizer:
                     ax.plot([min_observations, min_observations], [
                             0, 1], label=f'Stabilization Point for {key}', linestyle='--')
 
-            # Plot Gaia period for reference
-            gaia_period = get_gaia_period(self.star_id)
-            print(f'Fetched Gaia Period: {gaia_period}')
             ax.plot([0, max(periods_data.keys())], [gaia_period,
                     gaia_period], label='Gaia Period', linestyle='--')
 

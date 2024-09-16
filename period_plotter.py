@@ -157,8 +157,10 @@ class PeriodPlotter:
 
     def _compute_initial_period(self) -> None:
         start = datetime.now()
+        own_data = {key: self.data[key]
+                    for key in self.data if not key.startswith('Gaia')}
         self.best_period, self.possible_periods = compute_period(
-            self.data[self.zerokey], self.datestr, self.magstr, self.magerrstr)
+            combine_photometry_data(own_data), self.datestr, self.magstr, self.magerrstr)
         print(str(datetime.now() - start) +
               " s elapsed while computing period")
 
@@ -333,12 +335,29 @@ def _get_mag_field_names(photometry_path: str) -> tuple[str, str]:
 
 
 if __name__ == "__main__":
-    PHOTOMETRY_PATH = 'data/photometry/RR18_RRGem'
+    if len(os.sys.argv) < 2:
+        print("Usage: python period_plotter.py <path_to_photometry> <optional: star name>")
+        os.sys.exit(1)
+    elif not os.path.exists(os.sys.argv[1]):
+        print("Path does not exist")
+        os.sys.exit(1)
+    elif len(os.sys.argv) == 3:
+        photometry_path: str = os.sys.argv[1]
+        star_id: str = os.sys.argv[2]
+    else:
+        photometry_path: str = os.sys.argv[1]
+        if photometry_path.endswith("/"):
+            photometry_path = photometry_path[:-1]
+        star_id = photometry_path.split("/")[-1]
+        if '_' in star_id:
+            star_id = star_id.split("_")[1]
+        if 'gaia' in photometry_path.lower():
+            star_id = 'Gaia DR3 ' + star_id
     magstr, magerrstr = _get_mag_field_names(
-        PHOTOMETRY_PATH)
+        photometry_path)
     plotter = PeriodPlotter(
-        star_id='RR Gem',
-        base_dir=PHOTOMETRY_PATH,
+        star_id=star_id,
+        base_dir=photometry_path,
         periods_path='data/photometry/periods.txt',
         magstr=magstr,
         magerrstr=magerrstr)

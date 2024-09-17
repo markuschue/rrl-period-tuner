@@ -39,7 +39,7 @@ def bjd_tcb_to_mjd(bjd_tcb_date: float) -> float:
     bjd_tcb = bjd_tcb_date + ref_jd
 
     # Convert BJD(TCB) to MJD
-    mjd = bjd_tcb - 2400000.5
+    mjd = bjd_tcb - 2400000 - 0.5
 
     return mjd
 

@@ -32,6 +32,10 @@ class PeriodPlotter:
         # self.data = {key: self.data[key]
         #              for key in self.data if not key.startswith('Gaia')}
         # self.data["Combined"] = combine_photometry_data(self.data)
+        own_data = {key: self.data[key]
+                    for key in self.data if not key.startswith('Gaia')}
+        self.own_data = combine_photometry_data(own_data)
+        self.combined_data = combine_photometry_data(self.data)
 
         self.colours, self.factor, self.sort_keys, self.zphase, self.zerokey, self.zeromedian = self._initialize_plot_data()
         self._compute_initial_period()
@@ -157,10 +161,9 @@ class PeriodPlotter:
 
     def _compute_initial_period(self) -> None:
         start = datetime.now()
-        own_data = {key: self.data[key]
-                    for key in self.data if not key.startswith('Gaia')}
+
         self.best_period, self.possible_periods = compute_period(
-            combine_photometry_data(own_data), self.datestr, self.magstr, self.magerrstr)
+            self.combined_data, self.datestr, self.magstr, self.magerrstr)
         print(str(datetime.now() - start) +
               " s elapsed while computing period")
 
@@ -183,9 +186,9 @@ class PeriodPlotter:
     def _initialize_periodogram(self) -> plt.Axes:
         periodogram_plot = self.fig.add_subplot(221)
 
-        epoch = self.data[self.zerokey][self.datestr]
-        mag = self.data[self.zerokey][self.magstr]
-        mag_err = self.data[self.zerokey][self.magerrstr]
+        epoch = self.combined_data[self.datestr]
+        mag = self.combined_data[self.magstr]
+        mag_err = self.combined_data[self.magerrstr]
         freq, power = LombScargle(epoch, mag, mag_err).autopower(
             minimum_frequency=1, maximum_frequency=5)
 

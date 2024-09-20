@@ -325,7 +325,7 @@ class PeriodPlotter:
         self.rr.loc[self.rr["star"].str.contains(
             self.obj.split("_")[0]), "period"] = self.freq_slider.val
         Table.from_pandas(self.rr).write(
-            self.periods_path, format='ascii', overwrite=True)
+            self.periods_path, format='csv', overwrite=True)
 
         return None
 
@@ -361,7 +361,7 @@ if __name__ == "__main__":
     plotter = PeriodPlotter(
         star_id=star_id,
         base_dir=photometry_path,
-        periods_path='data/photometry/periods.txt',
+        periods_path='data/periods.csv',
         magstr=magstr,
         magerrstr=magerrstr)
     plt.show()

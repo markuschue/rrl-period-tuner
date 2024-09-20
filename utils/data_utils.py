@@ -176,7 +176,7 @@ def get_star_photometry(photometry_path: str, star_id: str | None = None, idstr:
     if star_id is None:
         star_id = file_star_id
 
-    finalIDs_file_path = photometry_path+"/finalIDs_" + file_star_id + ".fits"
+    final_ids_file_path = photometry_path+"/finalIDs_" + file_star_id + ".fits"
 
     photometry_data = {}
     for photometry_file in os.listdir(photometry_path):
@@ -195,5 +195,5 @@ def get_star_photometry(photometry_path: str, star_id: str | None = None, idstr:
                         band] = add_datetime_column(gaia_photometry[band])
 
     photometry_data = filter_photometry_data(
-        photometry_data, finalIDs_file_path)
+        photometry_data, final_ids_file_path)
     return photometry_data

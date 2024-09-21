@@ -15,7 +15,7 @@ from astropy.timeseries import LombScargle
 def compute_period(data: dict, datestr: str, magstr: str, magerrstr: str, enable_log=True):
     epoch, mag, mag_err = [data[datestr].values,
                            data[magstr].values, data[magerrstr].values]
-    NN = 2000
+    NN = 500
     period_array = np.zeros(NN)
 
     if enable_log:

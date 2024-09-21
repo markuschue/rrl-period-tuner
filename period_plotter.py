@@ -29,13 +29,12 @@ class PeriodPlotter:
         self.obj = self._get_object_name()
         self.data = get_star_photometry(
             self.bdir, self.star_id, self.idstr, self.magstr, self.magerrstr, self.datestr)
-        # self.data = {key: self.data[key]
-        #              for key in self.data if not key.startswith('Gaia')}
-        # self.data["Combined"] = combine_photometry_data(self.data)
         own_data = {key: self.data[key]
                     for key in self.data if not key.startswith('Gaia')}
         self.own_data = combine_photometry_data(own_data)
         self.combined_data = combine_photometry_data(self.data)
+
+        self.chosen_data = self.combined_data
 
         self.colours, self.factor, self.sort_keys, self.zphase, self.zerokey, self.zeromedian = self._initialize_plot_data()
         self._compute_initial_period()
@@ -160,12 +159,19 @@ class PeriodPlotter:
         return button
 
     def _compute_initial_period(self) -> None:
-        start = datetime.now()
+        # start = datetime.now()
 
-        self.best_period, self.possible_periods = compute_period(
-            self.combined_data, self.datestr, self.magstr, self.magerrstr)
-        print(str(datetime.now() - start) +
-              " s elapsed while computing period")
+        # self.best_period, self.possible_periods = compute_period(
+        #     self.chosen_data, self.datestr, self.magstr, self.magerrstr)
+        epoch = self.chosen_data[self.datestr]
+        mag = self.chosen_data[self.magstr]
+        mag_err = self.chosen_data[self.magerrstr]
+        self.freq, self.power = LombScargle(epoch, mag, mag_err).autopower(
+            minimum_frequency=1, maximum_frequency=5)
+        # print(str(datetime.now() - start) +
+        #       " s elapsed while computing period")
+
+        self.best_period = 1/self.freq[np.argmax(self.power)]
 
         self.rr = Table.read(self.periods_path,
                              format='ascii', names=["star", "period"]).to_pandas()
@@ -178,26 +184,21 @@ class PeriodPlotter:
 
         print(f"\nComputed period {self.best_period:.9f}, tabulated period {
               period_tabulated:.9f}")
-        print("Possible periods")
-        print(self.possible_periods)
+        # print("Possible periods")
+        # print(self.possible_periods)
 
         self.init_period = self.best_period
 
     def _initialize_periodogram(self) -> plt.Axes:
         periodogram_plot = self.fig.add_subplot(221)
 
-        epoch = self.combined_data[self.datestr]
-        mag = self.combined_data[self.magstr]
-        mag_err = self.combined_data[self.magerrstr]
-        freq, power = LombScargle(epoch, mag, mag_err).autopower(
-            minimum_frequency=1, maximum_frequency=5)
-
-        periodogram_plot.plot(1/freq, power)
-        periodogram_plot.set_ylim([min(power), max(power)*1.2])
-        periodogram_plot.set_xlim([min(1/freq), max(1/freq)])
+        periodogram_plot.plot(1/self.freq, self.power)
+        periodogram_plot.set_ylim([min(self.power), max(self.power)*1.2])
+        periodogram_plot.set_xlim([min(1/self.freq), max(1/self.freq)])
         periodogram_plot.set_xlabel("Period [d]", size=15, y=1.05)
         periodogram_plot.set_ylabel("Power", size=15, x=0.25)
-        periodogram_plot.plot(1/freq[np.argmax(power)], max(power), 'r.', ms=5)
+        periodogram_plot.plot(
+            1/self.freq[np.argmax(self.power)], max(self.power), 'r.', ms=5)
 
         periodogram_plot.axvline(self.init_period, 0, 1, color='k',
                                  ls=(0, (5, 5)), alpha=0.5)

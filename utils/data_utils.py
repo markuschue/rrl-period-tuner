@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 import pandas as pd
+from astropy.coordinates import EarthLocation, SkyCoord
 from astropy.table import Table
 from astropy.time import Time
 from astroquery.gaia import Gaia
@@ -29,19 +30,6 @@ def flux_to_magnitude_error(flux: float, flux_error: float) -> float:
     :return: The magnitude error value.
     """
     return abs(-2.5 / flux / log(10)) * flux_error
-
-
-def bjd_tcb_to_mjd(bjd_tcb_date: float) -> float:
-    # Reference JD corresponding to T0 (2010-01-01T00:00:00)
-    ref_jd = 2455197.5
-
-    # Calculate the full BJD(TCB)
-    bjd_tcb = bjd_tcb_date + ref_jd
-
-    # Convert BJD(TCB) to MJD
-    mjd = bjd_tcb - 2400000 - 0.5
-
-    return mjd
 
 
 def get_star_gaia_id(star_name: str) -> str:
@@ -76,7 +64,7 @@ def parse_gaia_photometry(gaia_photometry: pd.DataFrame, idstr: str = "ID", mags
     gaia_photometry[magstr] = gaia_photometry['mag']
     gaia_photometry[magerrstr] = flux_to_magnitude_error(
         gaia_photometry['flux'], gaia_photometry['flux_error'])
-    gaia_photometry[datestr] = bjd_tcb_to_mjd(gaia_photometry['time'])
+    gaia_photometry[datestr] = gaia_photometry['time']
     gaia_photometry[idstr] = gaia_photometry['source_id']
     gaia_photometry_data = {}
     for filter_key in gaia_photometry['band'].unique():
@@ -91,7 +79,7 @@ def get_gaia_photometry(star_id: str) -> pd.DataFrame:
     """
     Get the Gaia epoch photometry data for a given star
     using the Gaia catalog data with astroquery.
-    :param star_id: The ID of a star, which can be a Gaia ID 
+    :param star_id: The ID of a star, which can be a Gaia ID
         or a valid Simbad name or identifier.
     :return: The Gaia photometry data for the given star.
     """
@@ -105,7 +93,7 @@ def get_gaia_photometry(star_id: str) -> pd.DataFrame:
 def get_gaia_period(star_id: str) -> float:
     """
     Get the period of a star using the astroquery Gaia service.
-    :param star_id: The ID of a star, which can be a Gaia ID 
+    :param star_id: The ID of a star, which can be a Gaia ID
         or a valid Simbad name or identifier.
     """
     gaia_id = get_star_gaia_id(star_id)
@@ -138,7 +126,11 @@ def filter_photometry_data(photometry_data: dict[str, pd.DataFrame], id_filename
             else:
                 filtered_data[key] = photometry_data[key]
         return filtered_data
-    return photometry_data
+    else:
+        new_id_table = photometry_data['B'].ID.iloc[2:]
+        new_id_table = Table.from_pandas(new_id_table.to_frame())
+        new_id_table.write(id_filename, format='fits')
+        return photometry_data
 
 
 def add_datetime_column(data: pd.DataFrame) -> pd.DataFrame:
@@ -165,10 +157,39 @@ def combine_photometry_data(photometry_data: dict[str, pd.DataFrame]) -> pd.Data
     return combined_data
 
 
+def get_ra_dec(star_id: str) -> tuple[float, float]:
+    """
+    Get the right ascension and declination of a star from Simbad.
+    :param star_id: The ID of a star.
+    :return: The right ascension and declination of the star.
+    """
+    Simbad.add_votable_fields('ra', 'dec')
+    result_table = Simbad.query_object(star_id)
+    if result_table is not None:
+        return result_table['RA'][0], result_table['DEC'][0]
+    raise ValueError(f'No star found with the ID {star_id}')
+
+
+def format_dates(data: dict[str, pd.DataFrame], ra: float, dec: float) -> dict[str, pd.DataFrame]:
+    # Baryocentric Julian Day
+    earthcoord = EarthLocation(
+        lat='28 17 58.8 N', lon='16 30 39.7 W', height=2381.25)
+    coord = SkyCoord(ra=ra, dec=dec, unit='deg', equinox="J2000")
+
+    for key in data:
+        reference_date = Time(2455197.5, format='jd')
+        bjd = Time(data[key]["DATE-OBS"], format='mjd').light_travel_time(skycoord=coord,
+                                                                          kind='barycentric', location=earthcoord)
+        data[key].loc[:, "DATE-OBS"] = (Time(data[key].loc[:, "DATE-OBS"],
+                                             format='mjd') + bjd - reference_date).jd.astype('float64')
+
+    return data
+
+
 def get_star_photometry(photometry_path: str, star_id: str | None = None, idstr: str = "ID", magstr: str = "MAG_AUTO_NORM", magerrstr: str = "MAGERR_AUTO", datestr: str = "DATE-OBS") -> dict[str, pd.DataFrame]:
     """
     Get the prepared photometry data for a given star as a dict of dataframes for each filter.
-    :param photometry_path: The path to the photometry data for the given star. 
+    :param photometry_path: The path to the photometry data for the given star.
     :return: The photometry data for the given star.
     """
     file_star_id = Path(photometry_path).stem
@@ -186,13 +207,14 @@ def get_star_photometry(photometry_path: str, star_id: str | None = None, idstr:
                 band = filename_components[-2]
             else:
                 band = filename_components[-1]
-            photometry_data[band] = add_datetime_column(prepareTable(
-                photometry_path+'/'+photometry_file, 1))
+            photometry_data[band] = prepareTable(
+                photometry_path+'/'+photometry_file, 1)
+    photometry_data = format_dates(photometry_data, *get_ra_dec(star_id))
     gaia_photometry = parse_gaia_photometry(
         get_gaia_photometry(star_id), idstr, magstr, magerrstr, datestr)
     for band in gaia_photometry:
         photometry_data['Gaia-' +
-                        band] = add_datetime_column(gaia_photometry[band])
+                        band] = gaia_photometry[band]
 
     photometry_data = filter_photometry_data(
         photometry_data, final_ids_file_path)

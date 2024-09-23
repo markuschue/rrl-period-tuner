@@ -1,3 +1,4 @@
+import glob
 import os
 from pathlib import Path
 
@@ -133,14 +134,15 @@ def filter_photometry_data(photometry_data: dict[str, pd.DataFrame], id_filename
         return photometry_data
 
 
-def add_datetime_column(data: pd.DataFrame) -> pd.DataFrame:
+def parse_gaia_time(date: float) -> Time:
     """
-    Add a column to the data with the datetime values for each observation.
-    :param data: The photometry data for a given star.
+    Convert a date in Gaia format to a Time object.
+    :param date: The date in Gaia format.
+    :return: The Time object of the date.
     """
-    data['DATETIME'] = Time(data['DATE-OBS'], format='mjd').to_datetime()
-    data = data.sort_values('DATETIME')
-    return data
+    ref_date = 2455197.5
+
+    return Time(date + ref_date, format='jd')
 
 
 def combine_photometry_data(photometry_data: dict[str, pd.DataFrame]) -> pd.DataFrame:
@@ -177,11 +179,12 @@ def format_dates(data: dict[str, pd.DataFrame], ra: float, dec: float) -> dict[s
     coord = SkyCoord(ra=ra, dec=dec, unit='deg', equinox="J2000")
 
     for key in data:
-        reference_date = Time(2455197.5, format='jd')
+        reference_date = Time(2455197.5, format='jd').to_value(
+            'mjd').astype('float64')
         bjd = Time(data[key]["DATE-OBS"], format='mjd').light_travel_time(skycoord=coord,
                                                                           kind='barycentric', location=earthcoord)
         data[key].loc[:, "DATE-OBS"] = (Time(data[key].loc[:, "DATE-OBS"],
-                                             format='mjd') + bjd - reference_date).jd.astype('float64')
+                                             format='mjd') + bjd).to_value('mjd').astype('float64') - reference_date
 
     return data
 
@@ -219,3 +222,12 @@ def get_star_photometry(photometry_path: str, star_id: str | None = None, idstr:
     photometry_data = filter_photometry_data(
         photometry_data, final_ids_file_path)
     return photometry_data
+
+
+def get_mag_field_names(photometry_path: str) -> tuple[str, str]:
+    if not photometry_path.endswith('/'):
+        photometry_path = photometry_path + '/'
+    if len(glob.glob(photometry_path + "*final.fits")) > 0:
+        return "MAG_FINAL", "MAGERR_FINAL"
+    else:
+        return "MAG_AUTO_NORM", "MAGERR_AUTO"

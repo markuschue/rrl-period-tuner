@@ -11,7 +11,8 @@ from astropy.timeseries import LombScargle
 from matplotlib.ticker import AutoMinorLocator
 from matplotlib.widgets import Button, Slider, TextBox
 
-from utils.data_utils import combine_photometry_data, get_star_photometry
+from utils.data_utils import (combine_photometry_data, get_gaia_period,
+                              get_mag_field_names, get_star_photometry)
 from utils.period_utils import compute_period
 
 
@@ -31,8 +32,11 @@ class PeriodPlotter:
             self.bdir, self.star_id, self.idstr, self.magstr, self.magerrstr, self.datestr)
         own_data = {key: self.data[key]
                     for key in self.data if not key.startswith('Gaia')}
+        gaia_data = {key: self.data[key]
+                     for key in self.data if key.startswith('Gaia')}
         self.own_data = combine_photometry_data(own_data)
         self.combined_data = combine_photometry_data(self.data)
+        self.gaia_data = combine_photometry_data(gaia_data)
 
         self.chosen_data = self.combined_data
 
@@ -53,6 +57,31 @@ class PeriodPlotter:
 
         self.fig.canvas.mpl_connect(
             'key_release_event', self.arrow_key_image_control)
+
+    def _compute_initial_period(self) -> None:
+        epoch = self.chosen_data[self.datestr]
+        mag = self.chosen_data[self.magstr]
+        mag_err = self.chosen_data[self.magerrstr]
+        self.freq, self.power = LombScargle(epoch, mag, mag_err).autopower(
+            minimum_frequency=1, maximum_frequency=5)
+
+        self.best_period = 1/self.freq[np.argmax(self.power)]
+
+        self.rr = Table.read(self.periods_path,
+                             format='ascii', names=["star", "period"]).to_pandas()
+        period_tabulated = self.rr.loc[self.rr["star"].str.contains(
+            self.obj.split("_")[0]), "period"]
+        if len(period_tabulated) == 0:
+            period_tabulated = self.best_period
+        else:
+            period_tabulated = period_tabulated.iloc[0]
+
+        gaia_period = get_gaia_period(self.star_id)
+
+        print(f"\nComputed period {self.best_period:.9f}, tabulated period {
+              period_tabulated:.9f}, Gaia period {gaia_period:.9f}")
+
+        self.init_period = self.best_period
 
     def _get_object_name(self) -> str:
         return os.path.basename(os.path.normpath(self.bdir))
@@ -157,37 +186,6 @@ class PeriodPlotter:
         button.label.set_fontsize(14)
         button.on_clicked(self.confirm)
         return button
-
-    def _compute_initial_period(self) -> None:
-        # start = datetime.now()
-
-        # self.best_period, self.possible_periods = compute_period(
-        #     self.chosen_data, self.datestr, self.magstr, self.magerrstr)
-        epoch = self.chosen_data[self.datestr]
-        mag = self.chosen_data[self.magstr]
-        mag_err = self.chosen_data[self.magerrstr]
-        self.freq, self.power = LombScargle(epoch, mag, mag_err).autopower(
-            minimum_frequency=1, maximum_frequency=5)
-        # print(str(datetime.now() - start) +
-        #       " s elapsed while computing period")
-
-        self.best_period = 1/self.freq[np.argmax(self.power)]
-
-        self.rr = Table.read(self.periods_path,
-                             format='ascii', names=["star", "period"]).to_pandas()
-        period_tabulated = self.rr.loc[self.rr["star"].str.contains(
-            self.obj.split("_")[0]), "period"]
-        if len(period_tabulated) == 0:
-            period_tabulated = self.best_period
-        else:
-            period_tabulated = period_tabulated.iloc[0]
-
-        print(f"\nComputed period {self.best_period:.9f}, tabulated period {
-              period_tabulated:.9f}")
-        # print("Possible periods")
-        # print(self.possible_periods)
-
-        self.init_period = self.best_period
 
     def _initialize_periodogram(self) -> plt.Axes:
         periodogram_plot = self.fig.add_subplot(221)
@@ -331,13 +329,6 @@ class PeriodPlotter:
         return None
 
 
-def _get_mag_field_names(photometry_path: str) -> tuple[str, str]:
-    if len(glob.glob(photometry_path + "*final.fits")) > 0:
-        return "MAG_FINAL", "MAGERR_FINAL"
-    else:
-        return "MAG_AUTO_NORM", "MAGERR_AUTO"
-
-
 if __name__ == "__main__":
     if len(os.sys.argv) < 2:
         print("Usage: python period_plotter.py <path_to_photometry> <optional: star name>")
@@ -357,7 +348,7 @@ if __name__ == "__main__":
             star_id = star_id.split("_")[1]
         if 'gaia' in photometry_path.lower():
             star_id = 'Gaia DR3 ' + star_id
-    magstr, magerrstr = _get_mag_field_names(
+    magstr, magerrstr = get_mag_field_names(
         photometry_path)
     plotter = PeriodPlotter(
         star_id=star_id,

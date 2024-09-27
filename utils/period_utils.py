@@ -12,7 +12,19 @@ from astropy.time import Time
 from astropy.timeseries import LombScargle
 
 
-def compute_period(data, datestr, magstr, magerrstr):
+def compute_period(data: pd.DataFrame, datestr: str, magstr: str, magerrstr: str):
+    epoch = data[datestr]
+    mag = data[magstr]
+    mag_err = data[magerrstr]
+    freq, power = LombScargle(epoch, mag, mag_err).autopower(
+        minimum_frequency=1, maximum_frequency=5)
+
+    best_period = 1/freq[np.argmax(power)]
+
+    return best_period, freq, power
+
+
+def compute_period_in_loop(data, datestr, magstr, magerrstr):
     epoch, mag, mag_err = [data[datestr].values,
                            data[magstr].values, data[magerrstr].values]
     NN = 2000

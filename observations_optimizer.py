@@ -1,22 +1,24 @@
 import concurrent.futures
+import datetime
 import os
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from astropy.time import TimeDelta
 from astropy.timeseries import LombScargle
 
 from utils.data_utils import (combine_photometry_data, get_gaia_period,
                               get_mag_field_names, get_star_photometry,
                               parse_gaia_time)
 from utils.period_utils import compute_period
+from utils.run_utils import parse_cli_args
 
 
 class ObservationsOptimizer:
     def __init__(self, star_id: str, photometry_path: str, save_path: str,
                  compute_combined: bool = False, compute_individuals: bool = True,
-                 load_from_file: bool = False, observations_step: int = 5,
-                 magstr: str = 'MAG_AUTO_NORM', magerrstr: str = 'MAGERR_AUTO', datestr: str = "DATE-OBS"):
+                 load_from_file: bool = False, observations_step: int = 5):
         self.star_id = star_id
         self.photometry_path = photometry_path
         self.save_path = save_path
@@ -24,12 +26,24 @@ class ObservationsOptimizer:
         self.compute_individuals = compute_individuals
         self.load_from_file = load_from_file
         self.periods_by_observation_number = {}
-        self.photometry_data = None
         self.observations_step = observations_step
-        self.time_differences = [0, 30, 60, 120, 1440]
-        self.magstr = magstr
-        self.magerrstr = magerrstr
-        self.datestr = datestr
+        self.time_differences = [0, 5, 15, 30]
+        # self.time_differences = [0]
+
+        self.magstr, self.magerrstr = get_mag_field_names(
+            photometry_path)
+        print(f'Using magstr: {self.magstr}, magerrstr: {self.magerrstr}')
+        self.datestr = 'DATE-OBS'
+
+        self.data = get_star_photometry(
+            self.photometry_path, self.star_id, magstr=self.magstr, magerrstr=self.magerrstr, datestr=self.datestr)
+        own_data = {key: self.data[key]
+                    for key in self.data if not key.startswith('Gaia')}
+        gaia_data = {key: self.data[key]
+                     for key in self.data if key.startswith('Gaia')}
+        self.own_data = combine_photometry_data(own_data)
+        self.gaia_data = combine_photometry_data(gaia_data)
+        self.combined_data = combine_photometry_data(self.data)
 
     def filter_observations_by_time_difference(self, data: pd.DataFrame, time_difference: int) -> pd.DataFrame:
         """
@@ -37,14 +51,25 @@ class ObservationsOptimizer:
         :param data: The photometry data for a given star, with the time difference column added.
         :param time_difference: The time difference between observations in minutes.
         """
-        time_diff_delta = pd.Timedelta(minutes=time_difference)
-        filtered_data = data.copy()
-        for idx, row in data.iterrows():
-            if idx == 0:
-                continue
-            if idx - 1 in data.index and parse_gaia_time(row[self.datestr]) - parse_gaia_time(data.loc[idx - 1, self.datestr]) < time_diff_delta:
-                filtered_data.drop(idx, inplace=True)
-        return filtered_data
+        data = data.sort_values(by=self.datestr).reset_index(drop=True)
+        time_difference = datetime.timedelta(minutes=time_difference)
+
+        filtered_indices = []
+
+        last_accepted_idx = 0
+        filtered_indices.append(0)
+
+        for current_idx in range(1, len(data)):
+            current_time = parse_gaia_time(
+                data.loc[current_idx, self.datestr])
+            last_accepted_time = parse_gaia_time(
+                data.loc[last_accepted_idx, self.datestr])
+
+            if current_time - last_accepted_time >= TimeDelta(time_difference, format='datetime'):
+                filtered_indices.append(current_idx)
+                last_accepted_idx = current_idx
+
+        return data.loc[filtered_indices].reset_index(drop=True)
 
     def compute_period_for_observations(self, data: pd.DataFrame, observations: int) -> tuple:
         """
@@ -54,10 +79,8 @@ class ObservationsOptimizer:
         """
 
         sample_data = data.sample(observations)
-        self.freq, self.power = LombScargle(sample_data[self.datestr], sample_data[self.magstr], sample_data[self.magerrstr]).autopower(
-            minimum_frequency=1, maximum_frequency=5)
-
-        best_period = 1/self.freq[np.argmax(self.power)]
+        best_period, self.freq, self.power = compute_period(
+            sample_data, self.datestr, self.magstr, self.magerrstr)
 
         return observations, best_period
 
@@ -93,7 +116,7 @@ class ObservationsOptimizer:
         # Return sorted dict by observation number, since it may not be in order because of the multithreading
         return dict(sorted(periods_by_observation_number.items()))
 
-    def find_min_observations(self, data: dict, std_threshold=0.005, window=5):
+    def find_min_observations(self, data: dict, std_threshold=0.0000001, window=10):
         """
         Find the minimum number of observations required to stabilize the period using rolling standard deviation.
         """
@@ -118,7 +141,7 @@ class ObservationsOptimizer:
         num_plots = len(self.time_differences)
         # Adjust the figure size based on the number of subplots
         fig, axs = plt.subplots(
-            num_plots, figsize=(10, 5 * num_plots))
+            num_plots, 1, figsize=(10, 3 * num_plots))
 
         if title is not None:
             fig.suptitle(title)
@@ -132,11 +155,13 @@ class ObservationsOptimizer:
             if idx == len(self.time_differences) - 1:
                 ax.set_xlabel('Number of Observations')
             ax.set_ylabel('Period')
-            ax.set_title(f'Time Difference: {time_diff}')
+            ax.set_title(f'Minimum Time Difference: {time_diff}')
 
             for key in self.periods_by_observation_number[time_diff]:
                 # Plot the periods by observation number for each key
                 periods_data = self.periods_by_observation_number[time_diff][key]
+                if len(periods_data) == 0:
+                    continue
                 ax.plot(periods_data.keys(), periods_data.values(), label=key)
 
                 print(f'Last period computed for {key} at time difference {
@@ -146,11 +171,11 @@ class ObservationsOptimizer:
                 if min_observations is not None:
                     print(f'Stabilization Point for {key} at time difference {time_diff}: {
                           min_observations} with period {periods_data[min_observations]}')
-                    ax.plot([min_observations, min_observations], [
-                            0, 1], label=f'Stabilization Point for {key}', linestyle='--')
+                    ax.plot([min_observations, min_observations], [min(periods_data.values()), max(
+                        periods_data.values())], label=f'Stabilization Point for {key}', linestyle='--')
 
-            ax.plot([0, max(periods_data.keys())], [gaia_period,
-                    gaia_period], label='Gaia Period', linestyle='--')
+                ax.plot([0, max(periods_data.keys())], [gaia_period,
+                        gaia_period], label='Gaia Period', linestyle='--')
 
         plt.legend(loc="upper left", bbox_to_anchor=(1, 1))
         # Adjust the layout to prevent overlap with the title and legend
@@ -163,20 +188,16 @@ class ObservationsOptimizer:
         """
         if not self.load_from_file:
             for time_diff in self.time_differences:
-                self.photometry_data = get_star_photometry(
-                    self.photometry_path, self.star_id, magstr=self.magstr, magerrstr=self.magerrstr, datestr=self.datestr)
                 if self.compute_combined:
-                    combined_photometry = combine_photometry_data(
-                        self.photometry_data)
                     self.periods_by_observation_number[time_diff] = {
-                        "Combined": self.get_periods_by_observation_number(combined_photometry, time_diff)
+                        "Combined": self.get_periods_by_observation_number(self.combined_data, time_diff)
                     }
                 if self.compute_individuals:
-                    for key in self.photometry_data:
+                    for key in self.data:
                         if time_diff not in self.periods_by_observation_number:
                             self.periods_by_observation_number[time_diff] = {}
                         self.periods_by_observation_number[time_diff][key] = self.get_periods_by_observation_number(
-                            self.photometry_data[key], time_diff)
+                            self.data[key], time_diff)
             np.save(self.save_path, self.periods_by_observation_number)
         else:
             self.periods_by_observation_number = np.load(
@@ -191,61 +212,35 @@ class ObservationsOptimizer:
         and plot it to see if the period stabilizes or takes erratic values at some point.
         """
         if not self.load_from_file:
-            self.photometry_data = get_star_photometry(
-                self.photometry_path, self.star_id)
-            combined_gaia_photometry = pd.concat(
-                [self.photometry_data[key] for key in self.photometry_data if key.startswith('Gaia-')])
-            combined_own_photometry = pd.concat(
-                [self.photometry_data[key] for key in self.photometry_data if not key.startswith('Gaia-')])
-
-            self.periods_by_observation_number = {
-                "Combined": {
-                    len(combined_gaia_photometry): compute_period(combined_gaia_photometry, self.datestr, self.magstr, self.magerrstr)[0]
+            for time_diff in self.time_differences:
+                self.periods_by_observation_number[time_diff] = {
+                    "Combined": {
+                        0: self.compute_period_for_observations(self.gaia_data, len(self.gaia_data))[1]
+                    }
                 }
-            }
 
-            for n in range(self.observations_step, len(combined_own_photometry) + self.observations_step, self.observations_step):
-                if n > len(combined_own_photometry):
-                    n = len(combined_own_photometry)
-                print(f'Iteration {n} of {len(combined_own_photometry)}')
-                combined_photometry = pd.concat(
-                    [combined_gaia_photometry, combined_own_photometry.sample(n)])
-                self.periods_by_observation_number["Combined"][len(combined_gaia_photometry) + n] = compute_period(
-                    combined_photometry, self.datestr, self.magstr, self.magerrstr)[0]
+                filtered_data = self.filter_observations_by_time_difference(
+                    self.own_data, time_diff)
+                for n in range(self.observations_step, len(filtered_data) + self.observations_step, self.observations_step):
+                    if n > len(filtered_data):
+                        n = len(filtered_data)
+                    combined_photometry = pd.concat(
+                        [self.gaia_data, filtered_data.sample(n)])
+                    self.periods_by_observation_number[time_diff]["Combined"][n] = self.compute_period_for_observations(
+                        combined_photometry, len(combined_photometry))[1]
 
-            self.plot_periods_by_observation_number(
-                'Sequentially adding our observations to Gaia\'s for ' + self.star_id)
             np.save(self.save_path + '_seq.npy',
                     self.periods_by_observation_number)
         else:
             self.periods_by_observation_number = np.load(
                 self.save_path + '_seq.npy', allow_pickle=True).item()
-            self.plot_periods_by_observation_number(
-                'Sequentially adding our observations to Gaia\'s for ' + self.star_id)
+        self.plot_periods_by_observation_number(
+            'Sequentially adding our observations to Gaia\'s for ' + self.star_id)
 
 
 if __name__ == '__main__':
-    if len(os.sys.argv) < 2:
-        print("Usage: python observations_optimizer.py <path_to_photometry> <optional: star name>")
-        os.sys.exit(1)
-    elif not os.path.exists(os.sys.argv[1]):
-        print("Path does not exist")
-        os.sys.exit(1)
-    elif len(os.sys.argv) == 3:
-        photometry_path: str = os.sys.argv[1]
-        star_id: str = os.sys.argv[2]
-    else:
-        photometry_path: str = os.sys.argv[1]
-        if photometry_path.endswith("/"):
-            photometry_path = photometry_path[:-1]
-        star_id = photometry_path.split("/")[-1]
-        if '_' in star_id:
-            star_id = star_id.split("_")[1]
-        if 'gaia' in photometry_path.lower():
-            star_id = 'Gaia DR3 ' + star_id
-    magstr, magerrstr = get_mag_field_names(
-        photometry_path)
-    print(f'Using magstr: {magstr}, magerrstr: {magerrstr}')
+    photometry_path, star_id = parse_cli_args(
+        'Optimize the number of observations needed to stabilize the period for a given star')
 
     optimizer = ObservationsOptimizer(
         star_id=star_id,
@@ -254,9 +249,7 @@ if __name__ == '__main__':
         compute_combined=True,
         compute_individuals=False,
         load_from_file=False,
-        observations_step=10,
-        magstr=magstr,
-        magerrstr=magerrstr
+        observations_step=10
     )
-    optimizer.optimize_observations()
-    # optimizer.sequentially_add_observations_to_gaia()
+    # optimizer.optimize_observations()
+    optimizer.sequentially_add_observations_to_gaia()

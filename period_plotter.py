@@ -14,22 +14,28 @@ from matplotlib.widgets import Button, Slider, TextBox
 from utils.data_utils import (combine_photometry_data, get_gaia_period,
                               get_mag_field_names, get_star_photometry)
 from utils.period_utils import compute_period
+from utils.run_utils import parse_cli_args
 
 
 class PeriodPlotter:
-    def __init__(self, star_id: str, base_dir: str, periods_path: str, idstr: str = "ID", magstr: str = "MAG_AUTO_NORM", magerrstr: str = "MAGERR_AUTO", datestr: str = "DATE-OBS"):
+    def __init__(self, star_id: str, photometry_path: str, periods_path: str, idstr: str = "ID", datestr: str = "DATE-OBS"):
         self.star_id = star_id
-        self.bdir = base_dir
+        self.photometry_path = photometry_path
         self.periods_path = periods_path
 
+        self.magstr, self.magerrstr = get_mag_field_names(
+            photometry_path)
+        print(f'Using magstr: {self.magstr}, magerrstr: {self.magerrstr}')
+
         self.idstr = idstr
-        self.magstr = magstr
-        self.magerrstr = magerrstr
         self.datestr = datestr
 
         self.obj = self._get_object_name()
         self.data = get_star_photometry(
-            self.bdir, self.star_id, self.idstr, self.magstr, self.magerrstr, self.datestr)
+            self.photometry_path, self.star_id, self.idstr, self.magstr, self.magerrstr, self.datestr)
+        # valid_filters = ['V', 'Gaia-G', 'Gaia-BP', 'Gaia-RP']
+        # self.data = {key: self.data[key]
+        #              for key in self.data if key in valid_filters}
         own_data = {key: self.data[key]
                     for key in self.data if not key.startswith('Gaia')}
         gaia_data = {key: self.data[key]
@@ -59,13 +65,8 @@ class PeriodPlotter:
             'key_release_event', self.arrow_key_image_control)
 
     def _compute_initial_period(self) -> None:
-        epoch = self.chosen_data[self.datestr]
-        mag = self.chosen_data[self.magstr]
-        mag_err = self.chosen_data[self.magerrstr]
-        self.freq, self.power = LombScargle(epoch, mag, mag_err).autopower(
-            minimum_frequency=1, maximum_frequency=5)
-
-        self.best_period = 1/self.freq[np.argmax(self.power)]
+        self.best_period, self.freq, self.power = compute_period(
+            self.chosen_data, self.datestr, self.magstr, self.magerrstr)
 
         self.rr = Table.read(self.periods_path,
                              format='ascii', names=["star", "period"]).to_pandas()
@@ -84,7 +85,7 @@ class PeriodPlotter:
         self.init_period = self.best_period
 
     def _get_object_name(self) -> str:
-        return os.path.basename(os.path.normpath(self.bdir))
+        return os.path.basename(os.path.normpath(self.photometry_path))
 
     def _initialize_plot_data(self) -> Tuple[Dict[str, np.ndarray], Dict[str, float], pd.Series, str, float]:
         colours = plt.cm.rainbow(np.linspace(0, 1, len(self.data)))
@@ -330,30 +331,10 @@ class PeriodPlotter:
 
 
 if __name__ == "__main__":
-    if len(os.sys.argv) < 2:
-        print("Usage: python period_plotter.py <path_to_photometry> <optional: star name>")
-        os.sys.exit(1)
-    elif not os.path.exists(os.sys.argv[1]):
-        print("Path does not exist")
-        os.sys.exit(1)
-    elif len(os.sys.argv) == 3:
-        photometry_path: str = os.sys.argv[1]
-        star_id: str = os.sys.argv[2]
-    else:
-        photometry_path: str = os.sys.argv[1]
-        if photometry_path.endswith("/"):
-            photometry_path = photometry_path[:-1]
-        star_id = photometry_path.split("/")[-1]
-        if '_' in star_id:
-            star_id = star_id.split("_")[1]
-        if 'gaia' in photometry_path.lower():
-            star_id = 'Gaia DR3 ' + star_id
-    magstr, magerrstr = get_mag_field_names(
-        photometry_path)
+    photometry_path, star_id = parse_cli_args(
+        'Plot the phased light curve of a star')
     plotter = PeriodPlotter(
         star_id=star_id,
-        base_dir=photometry_path,
-        periods_path='data/periods.csv',
-        magstr=magstr,
-        magerrstr=magerrstr)
+        photometry_path=photometry_path,
+        periods_path='data/periods.csv')
     plt.show()

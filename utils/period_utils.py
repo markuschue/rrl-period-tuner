@@ -1,3 +1,4 @@
+import math
 import multiprocessing as mp
 import os
 import sys
@@ -12,16 +13,22 @@ from astropy.time import Time
 from astropy.timeseries import LombScargle
 
 
-def compute_period(data: pd.DataFrame, datestr: str, magstr: str, magerrstr: str):
+def compute_period(data: pd.DataFrame, datestr: str, magstr: str, magerrstr: str, gaia_period: float):
     epoch = data[datestr]
     mag = data[magstr]
     mag_err = data[magerrstr]
-    freq, power = LombScargle(epoch, mag, mag_err).autopower(
-        minimum_frequency=1, maximum_frequency=5)
 
-    best_period = 1/freq[np.argmax(power)]
+    minimum_period = math.floor(gaia_period * 1000) / 1000
+    maximum_period = math.ceil(gaia_period * 1000) / 1000
 
-    return best_period, freq, power
+    frequency_range = np.linspace(
+        1/maximum_period, 1/minimum_period, 1000000)
+    power = LombScargle(epoch, mag, mag_err, fit_mean=True).power(
+        frequency_range, assume_regular_frequency=True)
+
+    best_period = 1/frequency_range[np.argmax(power)]
+
+    return best_period, frequency_range, power
 
 
 def compute_period_in_loop(data, datestr, magstr, magerrstr):

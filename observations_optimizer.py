@@ -80,7 +80,7 @@ class ObservationsOptimizer:
 
         sample_data = data.sample(observations)
         best_period, self.freq, self.power = compute_period(
-            sample_data, self.datestr, self.magstr, self.magerrstr)
+            sample_data, self.datestr, self.magstr, self.magerrstr, get_gaia_period(self.star_id))
 
         return observations, best_period
 

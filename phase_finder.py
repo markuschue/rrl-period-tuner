@@ -46,5 +46,8 @@ class PhaseFinder():
 if __name__ == "__main__":
     photometry_path, star_id = parse_cli_args(
         'Find the phase of an observation for a given star')
+    observation_time = datetime.now()
     phase_finder = PhaseFinder(star_id, photometry_path)
-    print(phase_finder.find_observation_phase(datetime.now()))
+    print(f'Found period: {phase_finder.period}')
+    print(f'Fase of the star at the time of {observation_time.strftime(
+        "%d/%m/%Y, %H:%M:%S")}: {phase_finder.find_observation_phase(observation_time)}')

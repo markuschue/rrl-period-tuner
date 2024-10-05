@@ -33,7 +33,7 @@ class PeriodPlotter:
         self.obj = self._get_object_name()
         self.data = get_star_photometry(
             self.photometry_path, self.star_id, self.idstr, self.magstr, self.magerrstr, self.datestr)
-        # valid_filters = ['V', 'Gaia-G', 'Gaia-BP', 'Gaia-RP']
+        # valid_filters = ['V', 'Gaia-G']
         # self.data = {key: self.data[key]
         #              for key in self.data if key in valid_filters}
         own_data = {key: self.data[key]
@@ -66,7 +66,7 @@ class PeriodPlotter:
 
     def _compute_initial_period(self) -> None:
         self.best_period, self.freq, self.power = compute_period(
-            self.chosen_data, self.datestr, self.magstr, self.magerrstr)
+            self.chosen_data, self.datestr, self.magstr, self.magerrstr, get_gaia_period(self.star_id))
 
         self.rr = Table.read(self.periods_path,
                              format='ascii', names=["star", "period"]).to_pandas()
@@ -153,7 +153,7 @@ class PeriodPlotter:
             valmin=0,
             valmax=1,
             valinit=self.init_period,
-            valstep=0.0005,
+            valstep=0.000001,
             valfmt='%.9f'
         )
         slider.val = self.init_period
@@ -281,7 +281,6 @@ class PeriodPlotter:
     def reset(self, event: Any) -> None:
         print("Resetting period to initial value")
         self.freq_slider.reset()
-        self.freq_slider.valstep = 0.00000005
         self.freq_slider.val = self.init_period
         self.freq_slider.valmin = self.init_period*0.95
         self.freq_slider.valmax = self.init_period*1.05

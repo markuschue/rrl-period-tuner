@@ -4,12 +4,12 @@ import numpy as np
 
 def get_exp_time(apparent_magnitude: float) -> int:
     if apparent_magnitude >= 16:
-        return 60
+        return 230
     if apparent_magnitude >= 15:
-        return 50
+        return 90
     if apparent_magnitude >= 14:
-        return 20
-    return 5
+        return 35
+    return 14
 
 
 ZERO_POINT_FLUXES = {

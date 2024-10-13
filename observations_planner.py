@@ -4,9 +4,9 @@ import astropy.units as u
 import numpy as np
 import pandas as pd
 from astroplan import (AirmassConstraint, AltitudeConstraint,
-                       AtNightConstraint, FixedTarget, Observer,
-                       ObservingBlock, Schedule, SequentialScheduler,
-                       Transitioner, is_observable, observability_table)
+                       AtNightConstraint, FixedTarget,
+                       MoonSeparationConstraint, Observer, ObservingBlock,
+                       Schedule, SequentialScheduler, Transitioner)
 from astropy.coordinates import EarthLocation, SkyCoord
 from astropy.time import Time, TimeDelta
 from astroquery.simbad import Simbad
@@ -41,7 +41,8 @@ class ObservationPlanner:
 
         self.constraints = [AltitudeConstraint(30*u.deg, 90*u.deg),
                             AtNightConstraint.twilight_astronomical(),
-                            AirmassConstraint(max=2.5)]
+                            AirmassConstraint(max=2.5),
+                            MoonSeparationConstraint(min=15*u.deg)]
 
     def fetch_star_data(self):
         """
@@ -54,11 +55,11 @@ class ObservationPlanner:
             name = star['MAIN_ID']
             ra = star['RA']
             dec = star['DEC']
-            flux = star['FLUX_V']
+            mag = star['FLUX_V']
             self.star_data.append({
                 'name': name,
                 'coord': SkyCoord(ra=ra, dec=dec, unit=(u.hourangle, u.deg)),
-                'magnitude': flux_to_magnitude(flux * u.Jy, 'V'),
+                'magnitude': mag,
                 'period': get_gaia_period(name)
             })
 
@@ -83,14 +84,13 @@ class ObservationPlanner:
         # Not needed if we observe only one filter
         transitioner = Transitioner(slew_rate=1*u.deg / u.second)
 
-        # TODO: Comentar en la memoria del TFM como posible mejora a futuro la creación de un scheduler personalizado.
         scheduler = SequentialScheduler(
             constraints=self.constraints, observer=self.observer, transitioner=transitioner)
         self.schedule = Schedule(self.time_start, self.time_end)
 
         # Takes a long time, but it's normal
         scheduler(self.blocks, self.schedule)
-        with open('scheduler.pkl', 'wb') as file:
+        with open('data/scheduler.pkl', 'wb') as file:
             pickle.dump(self, file)
 
     def get_observation_table(self):
@@ -101,7 +101,7 @@ class ObservationPlanner:
                     'star': block.target.name,
                     'start_time': block.start_time.iso,
                     'end_time': block.end_time.iso,
-                    'exposure_time': block.duration.to(u.second).value
+                    'duration': block.duration.to(u.second).value
                 })
         return pd.DataFrame(table)
 
@@ -121,4 +121,4 @@ if __name__ == '__main__':
 
     planner = ObservationPlanner(star_ids, date, location)
     observation_table = planner.run()
-    observation_table.to_csv('observation_table.csv')
+    observation_table.to_csv('data/observation_table.csv')
